@@ -202,7 +202,7 @@ export default function SettingsScreen() {
           >
             <View style={styles.aboutContainer}>
               <Text style={[styles.aboutTitle, { color: colorScheme.onSurface }]}>
-                Pokédex — Kanto #001 - #151
+                Dexter — National Pokédex
               </Text>
               <Text style={[styles.aboutText, { color: colorScheme.secondary }]}>
                 A clean, native Apple-inspired flat minimal Pokédex app with offline SQLite sync and dynamic detail transitions.

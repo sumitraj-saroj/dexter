@@ -219,7 +219,7 @@ export default function HomeScreen() {
       {/* Simplified Home Header */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <Text style={[styles.title, { color: colorScheme.onBackground }]}>Pokédex</Text>
+          <Text style={[styles.title, { color: colorScheme.onBackground }]}>Dexter</Text>
           <TouchableOpacity
             activeOpacity={0.6}
             onPress={() => {

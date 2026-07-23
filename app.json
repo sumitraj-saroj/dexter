@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "pokedex-app",
-    "slug": "pokedex-app",
+    "name": "Dexter",
+    "slug": "dexter",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "scheme": "pokedex",
+    "scheme": "dexter",
     "ios": {
       "supportsTablet": true
     },

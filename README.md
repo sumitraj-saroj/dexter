@@ -1,4 +1,4 @@
-# Pokédex Mobile App 📱🔴
+# Dexter 📱🔴
 
 A modern, offline-first React Native & Expo Pokédex featuring dynamic Material-You-style per-type theming, evolution chains, audio cries playback, team builder, type matchup matrix, silhouette quiz mode, and Pokémon of the Day.
 
@@ -12,7 +12,7 @@ A modern, offline-first React Native & Expo Pokédex featuring dynamic Material-
 
 *(Add your screenshots here)*
 
-| Pokedex Home | Detail View | Type Matchups | Team Builder |
+| Dexter Home | Detail View | Type Matchups | Team Builder |
 | :---: | :---: | :---: | :---: |
 | *[Screenshot 1]* | *[Screenshot 2]* | *[Screenshot 3]* | *[Screenshot 4]* |
 
@@ -57,8 +57,8 @@ A modern, offline-first React Native & Expo Pokédex featuring dynamic Material-
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/<your-username>/pokedex-app.git
-   cd pokedex-app
+   git clone https://github.com/<your-username>/dexter.git
+   cd dexter
    ```
 
 2. **Install dependencies:**
