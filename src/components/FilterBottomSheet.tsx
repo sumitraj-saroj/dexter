@@ -1,0 +1,408 @@
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  Modal,
+  TouchableOpacity,
+  ScrollView,
+  Switch,
+  TextInput,
+  TouchableWithoutFeedback,
+} from 'react-native';
+import { FilterOptions, PokemonType } from '../types';
+import { useAppTheme } from '../theme';
+import { TypeChip } from './TypeChip';
+import { hapticSelection } from '../utils/haptics';
+
+interface FilterBottomSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  filters: FilterOptions;
+  onApplyFilters: (newFilters: FilterOptions) => void;
+  onResetFilters: () => void;
+}
+
+const ALL_TYPES: PokemonType[] = [
+  'normal',
+  'fire',
+  'water',
+  'electric',
+  'grass',
+  'ice',
+  'fighting',
+  'poison',
+  'ground',
+  'flying',
+  'psychic',
+  'bug',
+  'rock',
+  'ghost',
+  'dragon',
+  'steel',
+  'fairy',
+  'dark',
+];
+
+const ALL_GENERATIONS = [
+  { id: 1, name: 'Gen 1', region: 'Kanto' },
+  { id: 2, name: 'Gen 2', region: 'Johto' },
+  { id: 3, name: 'Gen 3', region: 'Hoenn' },
+  { id: 4, name: 'Gen 4', region: 'Sinnoh' },
+  { id: 5, name: 'Gen 5', region: 'Unova' },
+  { id: 6, name: 'Gen 6', region: 'Kalos' },
+  { id: 7, name: 'Gen 7', region: 'Alola' },
+  { id: 8, name: 'Gen 8', region: 'Galar' },
+  { id: 9, name: 'Gen 9', region: 'Paldea' },
+];
+
+export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
+  visible,
+  onClose,
+  filters,
+  onApplyFilters,
+  onResetFilters,
+}) => {
+  const { colorScheme } = useAppTheme();
+
+  const [selectedTypes, setSelectedTypes] = useState<PokemonType[]>(filters.types || []);
+  const [selectedGenerations, setSelectedGenerations] = useState<number[]>(filters.generations || []);
+  const [legendaryOnly, setLegendaryOnly] = useState<boolean>(filters.legendaryOnly || false);
+  const [ability, setAbility] = useState<string>(filters.ability || '');
+
+  // Sync state when sheet becomes visible
+  useEffect(() => {
+    if (visible) {
+      setSelectedTypes(filters.types || []);
+      setSelectedGenerations(filters.generations || []);
+      setLegendaryOnly(filters.legendaryOnly || false);
+      setAbility(filters.ability || '');
+    }
+  }, [visible, filters]);
+
+  const toggleType = (type: PokemonType) => {
+    hapticSelection();
+    if (selectedTypes.includes(type)) {
+      setSelectedTypes(selectedTypes.filter((t) => t !== type));
+    } else {
+      setSelectedTypes([...selectedTypes, type]);
+    }
+  };
+
+  const toggleGeneration = (genId: number) => {
+    hapticSelection();
+    if (selectedGenerations.includes(genId)) {
+      setSelectedGenerations(selectedGenerations.filter((g) => g !== genId));
+    } else {
+      setSelectedGenerations([...selectedGenerations, genId]);
+    }
+  };
+
+  const handleApply = () => {
+    onApplyFilters({
+      ...filters,
+      types: selectedTypes,
+      generations: selectedGenerations,
+      legendaryOnly,
+      ability: ability.trim(),
+    });
+    onClose();
+  };
+
+  const handleReset = () => {
+    setSelectedTypes([]);
+    setSelectedGenerations([]);
+    setLegendaryOnly(false);
+    setAbility('');
+    onResetFilters();
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={onClose}
+    >
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <View
+              style={[
+                styles.sheetContainer,
+                { backgroundColor: colorScheme.surface },
+              ]}
+            >
+              {/* Top Handle bar */}
+              <View style={styles.handleBar} />
+
+              {/* Sheet Header */}
+              <View style={styles.header}>
+                <Text style={[styles.title, { color: colorScheme.onSurface }]}>
+                  Filter Pokédex
+                </Text>
+                <TouchableOpacity onPress={handleReset}>
+                  <Text style={[styles.resetText, { color: colorScheme.primary }]}>
+                    Reset All
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+              >
+                {/* Legendary / Mythical Toggle */}
+                <View style={styles.section}>
+                  <View style={styles.toggleRow}>
+                    <View style={styles.toggleLabelGroup}>
+                      <Text style={[styles.sectionTitle, { color: colorScheme.onSurface }]}>
+                        Legendary / Mythical Only
+                      </Text>
+                      <Text style={[styles.sectionSubtitle, { color: colorScheme.onSurfaceVariant }]}>
+                        Filter for rare and mythic Pokémon
+                      </Text>
+                    </View>
+                    <Switch
+                      value={legendaryOnly}
+                      onValueChange={(val) => {
+                        hapticSelection();
+                        setLegendaryOnly(val);
+                      }}
+                      trackColor={{ false: colorScheme.outline + '40', true: colorScheme.primary }}
+                      thumbColor={legendaryOnly ? colorScheme.onPrimary : colorScheme.surfaceVariant}
+                    />
+                  </View>
+                </View>
+
+                {/* Generation / Region Filter */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colorScheme.onSurface }]}>
+                    Generations & Regions (OR logic)
+                  </Text>
+                  <View style={styles.genGrid}>
+                    {ALL_GENERATIONS.map((gen) => {
+                      const isSelected = selectedGenerations.includes(gen.id);
+                      return (
+                        <TouchableOpacity
+                          key={gen.id}
+                          activeOpacity={0.7}
+                          onPress={() => toggleGeneration(gen.id)}
+                          style={[
+                            styles.genChip,
+                            {
+                              backgroundColor: isSelected
+                                ? colorScheme.primaryContainer
+                                : colorScheme.surfaceVariant,
+                              borderColor: isSelected
+                                ? colorScheme.primary
+                                : colorScheme.outline + '40',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.genChipTitle,
+                              {
+                                color: isSelected
+                                  ? colorScheme.onPrimaryContainer
+                                  : colorScheme.onSurfaceVariant,
+                              },
+                            ]}
+                          >
+                            {gen.name}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.genChipRegion,
+                              {
+                                color: isSelected
+                                  ? colorScheme.onPrimaryContainer + 'B0'
+                                  : colorScheme.onSurfaceVariant + '90',
+                              },
+                            ]}
+                          >
+                            {gen.region}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Ability Text Filter */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colorScheme.onSurface }]}>
+                    Search Ability
+                  </Text>
+                  <TextInput
+                    value={ability}
+                    onChangeText={setAbility}
+                    placeholder="e.g. Levitate, Overgrow, Static..."
+                    placeholderTextColor={colorScheme.onSurfaceVariant + '70'}
+                    style={[
+                      styles.abilityInput,
+                      {
+                        backgroundColor: colorScheme.surfaceVariant,
+                        color: colorScheme.onSurfaceVariant,
+                        borderColor: colorScheme.outline + '30',
+                      },
+                    ]}
+                  />
+                </View>
+
+                {/* Type Multi-select Chips */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colorScheme.onSurface }]}>
+                    Pokémon Types (OR logic)
+                  </Text>
+                  <View style={styles.chipGrid}>
+                    {ALL_TYPES.map((type) => (
+                      <TypeChip
+                        key={type}
+                        type={type}
+                        selected={selectedTypes.includes(type)}
+                        size="medium"
+                        onPress={() => toggleType(type)}
+                      />
+                    ))}
+                  </View>
+                </View>
+              </ScrollView>
+
+              {/* Bottom Action Footer */}
+              <View style={styles.footer}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleApply}
+                  style={[styles.applyButton, { backgroundColor: colorScheme.primary }]}
+                >
+                  <Text style={[styles.applyText, { color: colorScheme.onPrimary }]}>
+                    Apply Filters
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheetContainer: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+    paddingBottom: 24,
+  },
+  handleBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#8E8E93',
+    opacity: 0.5,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#8E8E9320',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  resetText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scrollContent: {
+    padding: 20,
+    gap: 20,
+  },
+  section: {},
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  toggleLabelGroup: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  genGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  genChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  genChipTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  genChipRegion: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  abilityInput: {
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  applyButton: {
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  applyText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+});
