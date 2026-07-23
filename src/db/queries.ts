@@ -1,4 +1,4 @@
-import { FilterOptions, Generation, Pokemon, PokemonAbility, PokemonMove, PokemonStat, QuizScoreRecord, TeamMember } from '../types';
+import { FilterOptions, Generation, Pokemon, PokemonAbility, PokemonMove, PokemonStat, PokemonVariant, QuizScoreRecord, TeamMember } from '../types';
 
 function mapRowToPokemon(row: any): Pokemon {
   return {
@@ -574,6 +574,52 @@ export async function getPokemonOfTheDay(db: any, overrideDate?: string): Promis
   await setUserSetting(db, 'pokemon_of_the_day_id', String(selectedId));
 
   return getPokemonById(db, selectedId);
+}
+
+export async function getVariantsForPokemon(db: any, basePokemonId: number): Promise<PokemonVariant[]> {
+  const sql = `
+    SELECT * FROM pokemon_variants WHERE base_pokemon_id = ? ORDER BY id ASC;
+  `;
+  const rows = await runSelectQuery(db, sql, [basePokemonId]);
+  if (!rows || rows.length === 0) return [];
+
+  const variants: PokemonVariant[] = [];
+
+  for (const r of rows) {
+    const abSql = `SELECT ability_name as name, effect_text as effect, is_hidden as isHidden FROM pokemon_variant_abilities WHERE variant_id = ?;`;
+    const abRows = await runSelectQuery(db, abSql, [r.id]);
+
+    variants.push({
+      id: r.id,
+      basePokemonId: r.base_pokemon_id,
+      variantName: r.variant_name,
+      regionLabel: r.region_label,
+      primaryType: r.primary_type as any,
+      secondaryType: r.secondary_type ? (r.secondary_type as any) : null,
+      height: r.height,
+      weight: r.weight,
+      flavorText: r.flavor_text || '',
+      spriteUrl: r.sprite_url || '',
+      shinySpriteUrl: r.shiny_sprite_url || '',
+      officialArtworkUrl: r.official_artwork_url || '',
+      shinyArtworkUrl: r.shiny_artwork_url || '',
+      stats: {
+        hp: r.hp,
+        attack: r.attack,
+        defense: r.defense,
+        specialAttack: r.sp_attack,
+        specialDefense: r.sp_defense,
+        speed: r.speed,
+      },
+      abilities: abRows.map((a: any) => ({
+        name: a.name,
+        effect: a.effect || '',
+        isHidden: Boolean(a.isHidden),
+      })),
+    });
+  }
+
+  return variants;
 }
 
 

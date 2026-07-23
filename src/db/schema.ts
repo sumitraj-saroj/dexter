@@ -90,4 +90,39 @@ CREATE TABLE IF NOT EXISTS quiz_scores (
   best_streak INTEGER NOT NULL,
   date_played TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pokemon_variants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  base_pokemon_id INTEGER NOT NULL,
+  variant_name TEXT NOT NULL,
+  region_label TEXT NOT NULL,
+  primary_type TEXT NOT NULL,
+  secondary_type TEXT,
+  height INTEGER,
+  weight INTEGER,
+  flavor_text TEXT,
+  hp INTEGER NOT NULL,
+  attack INTEGER NOT NULL,
+  defense INTEGER NOT NULL,
+  sp_attack INTEGER NOT NULL,
+  sp_defense INTEGER NOT NULL,
+  speed INTEGER NOT NULL,
+  sprite_url TEXT,
+  shiny_sprite_url TEXT,
+  official_artwork_url TEXT,
+  shiny_artwork_url TEXT,
+  FOREIGN KEY (base_pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS pokemon_variant_abilities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  variant_id INTEGER NOT NULL,
+  ability_name TEXT NOT NULL,
+  effect_text TEXT,
+  is_hidden INTEGER DEFAULT 0,
+  FOREIGN KEY (variant_id) REFERENCES pokemon_variants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_variant_base_pokemon_id ON pokemon_variants(base_pokemon_id);
+CREATE INDEX IF NOT EXISTS idx_variant_abilities_variant_id ON pokemon_variant_abilities(variant_id);
 `;

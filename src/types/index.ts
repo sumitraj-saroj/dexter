@@ -85,6 +85,24 @@ export interface FilterOptions {
   searchQuery?: string;
 }
 
+export interface PokemonVariant {
+  id: number;
+  basePokemonId: number;
+  variantName: string;
+  regionLabel: string; // e.g. "Alolan", "Galarian", "Hisuian", "Paldean"
+  primaryType: PokemonType;
+  secondaryType?: PokemonType | null;
+  height?: number;
+  weight?: number;
+  flavorText?: string;
+  spriteUrl: string;
+  shinySpriteUrl: string;
+  officialArtworkUrl: string;
+  shinyArtworkUrl: string;
+  stats: PokemonStat;
+  abilities: PokemonAbility[];
+}
+
 export interface FullPokemonData {
   pokemon: {
     id: number;
@@ -124,6 +142,34 @@ export interface FullPokemonData {
     evolves_from_id: number | null;
     evolution_trigger: string | null;
   };
+  variants?: Array<{
+    id?: number;
+    base_pokemon_id: number;
+    variant_name: string;
+    region_label: string;
+    primary_type: string;
+    secondary_type: string | null;
+    height: number;
+    weight: number;
+    flavor_text: string;
+    sprite_url: string;
+    shiny_sprite_url: string;
+    official_artwork_url: string;
+    shiny_artwork_url: string;
+    stats: {
+      hp: number;
+      attack: number;
+      defense: number;
+      sp_attack: number;
+      sp_defense: number;
+      speed: number;
+    };
+    abilities: Array<{
+      ability_name: string;
+      effect_text: string;
+      is_hidden: boolean;
+    }>;
+  }>;
 }
 
 export interface M3ColorScheme {

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as SplashScreen from 'expo-splash-screen';
 import { useAppTheme } from '../../src/theme';
 import { isDatabaseSynced, syncKantoPokemon } from '../../src/db';
 import { SyncLoadingScreen, PokemonCard, SearchBar, FilterBottomSheet, PokemonOfTheDayCard } from '../../src/components';
@@ -114,6 +115,13 @@ export default function HomeScreen() {
     };
   }, [db, startSync]);
 
+  // Hide native splash screen once sync check finishes and screen is ready
+  React.useEffect(() => {
+    if (!isCheckingSync) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [isCheckingSync]);
+
   // Card Tap Handler -> Navigate to /pokemon/[id]
   const handleCardPress = useCallback(
     (pokemon: Pokemon) => {
@@ -194,11 +202,7 @@ export default function HomeScreen() {
   );
 
   if (isCheckingSync) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colorScheme.background }]}>
-        <ActivityIndicator size="large" color={colorScheme.primary} />
-      </View>
-    );
+    return <View style={[styles.container, { backgroundColor: colorScheme.background }]} />;
   }
 
   if (!isSynced) {

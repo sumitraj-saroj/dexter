@@ -1,7 +1,79 @@
-import { fetchAllNationalPokemon } from '../api/pokeapi';
+import { fetchAllNationalPokemon, fetchRegionalVariantsForSpecies } from '../api/pokeapi';
 import { getUserSetting, setUserSetting } from './queries';
+import { FullPokemonData } from '../types';
 
-const CURRENT_DATA_VERSION = '3';
+const CURRENT_DATA_VERSION = '4';
+
+async function insertVariant(db: any, v: NonNullable<FullPokemonData['variants']>[0]): Promise<void> {
+  let variantId: number | null = null;
+  if (typeof db.runAsync === 'function') {
+    const res: any = await db.runAsync(
+      `INSERT INTO pokemon_variants (base_pokemon_id, variant_name, region_label, primary_type, secondary_type, height, weight, flavor_text, hp, attack, defense, sp_attack, sp_defense, speed, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        v.base_pokemon_id,
+        v.variant_name,
+        v.region_label,
+        v.primary_type,
+        v.secondary_type,
+        v.height,
+        v.weight,
+        v.flavor_text,
+        v.stats.hp,
+        v.stats.attack,
+        v.stats.defense,
+        v.stats.sp_attack,
+        v.stats.sp_defense,
+        v.stats.speed,
+        v.sprite_url,
+        v.shiny_sprite_url,
+        v.official_artwork_url,
+        v.shiny_artwork_url,
+      ]
+    );
+    variantId = res?.lastInsertRowId || null;
+    if (variantId) {
+      for (const ab of v.abilities) {
+        await db.runAsync(
+          `INSERT INTO pokemon_variant_abilities (variant_id, ability_name, effect_text, is_hidden) VALUES (?, ?, ?, ?)`,
+          [variantId, ab.ability_name, ab.effect_text, ab.is_hidden ? 1 : 0]
+        );
+      }
+    }
+  } else if (typeof db.prepare === 'function') {
+    const stmt = db.prepare(
+      `INSERT INTO pokemon_variants (base_pokemon_id, variant_name, region_label, primary_type, secondary_type, height, weight, flavor_text, hp, attack, defense, sp_attack, sp_defense, speed, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const info = stmt.run(
+      v.base_pokemon_id,
+      v.variant_name,
+      v.region_label,
+      v.primary_type,
+      v.secondary_type,
+      v.height,
+      v.weight,
+      v.flavor_text,
+      v.stats.hp,
+      v.stats.attack,
+      v.stats.defense,
+      v.stats.sp_attack,
+      v.stats.sp_defense,
+      v.stats.speed,
+      v.sprite_url,
+      v.shiny_sprite_url,
+      v.official_artwork_url,
+      v.shiny_artwork_url
+    );
+    variantId = Number(info.lastInsertRowid);
+    const abStmt = db.prepare(
+      `INSERT INTO pokemon_variant_abilities (variant_id, ability_name, effect_text, is_hidden) VALUES (?, ?, ?, ?)`
+    );
+    for (const ab of v.abilities) {
+      abStmt.run(variantId, ab.ability_name, ab.effect_text, ab.is_hidden ? 1 : 0);
+    }
+  }
+}
 
 export async function isDatabaseSynced(db: any): Promise<boolean> {
   try {
@@ -12,7 +84,6 @@ export async function isDatabaseSynced(db: any): Promise<boolean> {
       );
       count = row?.count || 0;
     } else if (typeof db.prepare === 'function') {
-      // Node.js sqlite fallback (e.g. better-sqlite3)
       const row: any = db
         .prepare(
           'SELECT COUNT(*) as count FROM pokemon WHERE shiny_artwork_url IS NOT NULL AND shiny_artwork_url != ""'
@@ -28,14 +99,65 @@ export async function isDatabaseSynced(db: any): Promise<boolean> {
   }
 }
 
+export async function syncRegionalVariantsOnly(db: any): Promise<void> {
+  let pokemonIds: number[] = [];
+  if (typeof db.getAllAsync === 'function') {
+    const rows = await db.getAllAsync('SELECT id FROM pokemon ORDER BY id ASC');
+    pokemonIds = rows.map((r: any) => r.id);
+  } else if (typeof db.prepare === 'function') {
+    const rows = db.prepare('SELECT id FROM pokemon ORDER BY id ASC').all();
+    pokemonIds = rows.map((r: any) => r.id);
+  }
+
+  // Clear existing variants before backfill
+  if (typeof db.runAsync === 'function') {
+    await db.runAsync('DELETE FROM pokemon_variant_abilities;');
+    await db.runAsync('DELETE FROM pokemon_variants;');
+  } else if (typeof db.prepare === 'function') {
+    db.prepare('DELETE FROM pokemon_variant_abilities;').run();
+    db.prepare('DELETE FROM pokemon_variants;').run();
+  }
+
+  const batchSize = 10;
+  for (let i = 0; i < pokemonIds.length; i += batchSize) {
+    const batch = pokemonIds.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (id) => {
+        const variants = await fetchRegionalVariantsForSpecies(id);
+        if (variants && variants.length > 0) {
+          for (const v of variants) {
+            await insertVariant(db, v);
+          }
+        }
+      })
+    );
+  }
+
+  await setUserSetting(db, 'data_version', CURRENT_DATA_VERSION);
+}
+
 export async function syncNationalPokemon(
   db: any,
   onProgress?: (current: number, total: number) => void,
   force: boolean = false
 ): Promise<void> {
   if (!force) {
-    const synced = await isDatabaseSynced(db);
-    if (synced) {
+    let count = 0;
+    if (typeof db.getFirstAsync === 'function') {
+      const row: any = await db.getFirstAsync('SELECT COUNT(*) as count FROM pokemon');
+      count = row?.count || 0;
+    } else if (typeof db.prepare === 'function') {
+      const row: any = db.prepare('SELECT COUNT(*) as count FROM pokemon').get();
+      count = row?.count || 0;
+    }
+
+    const version = await getUserSetting(db, 'data_version', '0');
+
+    if (count >= 1000) {
+      if (version !== CURRENT_DATA_VERSION) {
+        // Run targeted incremental variant sync backfill
+        await syncRegionalVariantsOnly(db);
+      }
       if (onProgress) onProgress(1025, 1025);
       return;
     }
@@ -48,6 +170,8 @@ export async function syncNationalPokemon(
     await db.withTransactionAsync(async () => {
       // Clear existing records before sync
       await db.execAsync(`
+        DELETE FROM pokemon_variant_abilities;
+        DELETE FROM pokemon_variants;
         DELETE FROM pokemon_moves;
         DELETE FROM pokemon_abilities;
         DELETE FROM pokemon_stats;
@@ -64,7 +188,7 @@ export async function syncNationalPokemon(
       }
 
       for (const item of pokemonList) {
-        const { pokemon, stats, abilities, moves, evolution } = item;
+        const { pokemon, stats, abilities, moves, evolution, variants } = item;
 
         await db.runAsync(
           `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
@@ -124,12 +248,20 @@ export async function syncNationalPokemon(
             [pokemon.id, evolution.evolves_from_id, evolution.evolution_trigger]
           );
         }
+
+        if (variants && variants.length > 0) {
+          for (const v of variants) {
+            await insertVariant(db, v);
+          }
+        }
       }
     });
     await setUserSetting(db, 'data_version', CURRENT_DATA_VERSION);
   } else if (typeof db.prepare === 'function') {
     // Node.js sqlite (better-sqlite3 style) for testing
     const deleteQueries = [
+      'DELETE FROM pokemon_variant_abilities;',
+      'DELETE FROM pokemon_variants;',
       'DELETE FROM pokemon_moves;',
       'DELETE FROM pokemon_abilities;',
       'DELETE FROM pokemon_stats;',
@@ -171,7 +303,7 @@ export async function syncNationalPokemon(
         }
 
         for (const item of pList) {
-          const { pokemon, stats, abilities, moves, evolution } = item;
+          const { pokemon, stats, abilities, moves, evolution, variants } = item;
           insertPokemon.run(
             pokemon.id,
             pokemon.name,
@@ -205,6 +337,11 @@ export async function syncNationalPokemon(
           }
           if (evolution.evolves_from_id !== null) {
             insertEvo.run(pokemon.id, evolution.evolves_from_id, evolution.evolution_trigger);
+          }
+          if (variants && variants.length > 0) {
+            for (const v of variants) {
+              insertVariant(db, v);
+            }
           }
         }
       }

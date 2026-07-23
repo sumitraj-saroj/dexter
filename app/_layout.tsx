@@ -1,11 +1,15 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '../src/theme';
 import { migrateDbIfNeeded } from '../src/db';
+
+// Prevent splash screen from auto-hiding before initialization
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export const DbContext = createContext<SQLiteDatabase | null>(null);
 
@@ -39,6 +43,7 @@ export default function RootLayout() {
         if (isMounted) setDb(database);
       } catch (e) {
         console.error('Failed to initialize database', e);
+        SplashScreen.hideAsync().catch(() => {});
       }
     }
     initDb();
@@ -48,11 +53,7 @@ export default function RootLayout() {
   }, []);
 
   if (!db) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+    return <View style={{ flex: 1, backgroundColor: '#FAFAFA' }} />;
   }
 
   return (

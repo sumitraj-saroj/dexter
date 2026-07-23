@@ -231,6 +231,9 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
 
   const formattedNumber = `#${String(speciesId).padStart(3, '0')}`;
 
+  // Fetch Regional Variants if any exist in varieties
+  const variantDataList = await fetchRegionalVariantsForSpecies(speciesId, sData.varieties, flavor_text);
+
   return {
     pokemon: {
       id: speciesId,
@@ -255,7 +258,122 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
       evolves_from_id,
       evolution_trigger: null,
     },
+    variants: variantDataList,
   };
+}
+
+export function getRegionFromVarietyName(name: string): string | null {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('-alola') || lower.includes('-alola-')) return 'Alolan';
+  if (lower.endsWith('-galar') || lower.includes('-galar-')) return 'Galarian';
+  if (lower.endsWith('-hisui') || lower.includes('-hisui-')) return 'Hisuian';
+  if (lower.endsWith('-paldea') || lower.includes('-paldea-')) return 'Paldean';
+  return null;
+}
+
+export async function fetchRegionalVariantsForSpecies(
+  speciesId: number,
+  varieties?: any[],
+  fallbackFlavorText: string = ''
+): Promise<NonNullable<FullPokemonData['variants']>> {
+  let varsList = varieties;
+  if (!varsList) {
+    try {
+      const speciesRes = await fetchWithRetry(`${BASE_URL}/pokemon-species/${speciesId}`);
+      if (speciesRes.ok) {
+        const sData = await speciesRes.json();
+        varsList = sData.varieties || [];
+      }
+    } catch (e) {
+      return [];
+    }
+  }
+
+  if (!varsList || varsList.length === 0) return [];
+
+  const regionalVarieties = varsList.filter((v: any) => {
+    if (v.is_default) return false;
+    const name = v.pokemon?.name || '';
+    return getRegionFromVarietyName(name) !== null;
+  });
+
+  if (regionalVarieties.length === 0) return [];
+
+  const results: NonNullable<FullPokemonData['variants']> = [];
+
+  for (const v of regionalVarieties) {
+    try {
+      const varName = v.pokemon.name;
+      const regionLabel = getRegionFromVarietyName(varName) || 'Regional';
+      const varRes = await fetchWithRetry(v.pokemon.url);
+      if (!varRes.ok) continue;
+      const pData = await varRes.json();
+
+      const sortedTypes = (pData.types || []).sort((a: any, b: any) => a.slot - b.slot);
+      const primary_type = sortedTypes[0]?.type?.name || 'normal';
+      const secondary_type = sortedTypes[1]?.type?.name || null;
+
+      const getStat = (statName: string) => {
+        const found = pData.stats?.find((s: any) => s.stat?.name === statName);
+        return found ? found.base_stat : 0;
+      };
+
+      const stats = {
+        hp: getStat('hp'),
+        attack: getStat('attack'),
+        defense: getStat('defense'),
+        sp_attack: getStat('special-attack'),
+        sp_defense: getStat('special-defense'),
+        speed: getStat('speed'),
+      };
+
+      const abilities = await Promise.all(
+        (pData.abilities || []).map(async (a: any) => {
+          const abilityName = a.ability.name;
+          const effectText = await fetchAbilityEffect(a.ability.url, abilityName);
+          return {
+            ability_name: abilityName,
+            effect_text: effectText,
+            is_hidden: Boolean(a.is_hidden),
+          };
+        })
+      );
+
+      const sprite_url =
+        pData.sprites?.front_default ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pData.id}.png`;
+      const shiny_sprite_url =
+        pData.sprites?.front_shiny ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pData.id}.png`;
+      const official_artwork_url =
+        pData.sprites?.other?.['official-artwork']?.front_default ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pData.id}.png`;
+      const shiny_artwork_url =
+        pData.sprites?.other?.['official-artwork']?.front_shiny ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pData.id}.png`;
+
+      results.push({
+        base_pokemon_id: speciesId,
+        variant_name: varName,
+        region_label: regionLabel,
+        primary_type,
+        secondary_type,
+        height: pData.height,
+        weight: pData.weight,
+        flavor_text: fallbackFlavorText,
+        sprite_url,
+        shiny_sprite_url,
+        official_artwork_url,
+        shiny_artwork_url,
+        stats,
+        abilities,
+      });
+    } catch (err) {
+      console.error(`Failed to fetch variant ${v.pokemon?.name}:`, err);
+    }
+  }
+
+  return results;
 }
 
 export async function fetchAllNationalPokemon(

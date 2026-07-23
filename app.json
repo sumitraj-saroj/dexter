@@ -7,11 +7,21 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "dexter",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAFAFA",
+      "dark": {
+        "image": "./assets/splash-dark.png",
+        "backgroundColor": "#0D0D0D"
+      }
+    },
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/icon.png"
     },
     "android": {
+      "package": "com.dexter.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -28,7 +38,19 @@
       "expo-status-bar",
       "expo-sqlite",
       "expo-image",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FAFAFA",
+          "dark": {
+            "image": "./assets/splash-dark.png",
+            "backgroundColor": "#0D0D0D"
+          }
+        }
+      ]
     ]
   }
 }

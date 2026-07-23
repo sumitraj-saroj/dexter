@@ -14,8 +14,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme, AnimatedThemeView } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getPokemonById, getEvolutionChainForPokemon, getUserSetting } from '../../src/db/queries';
-import { Pokemon } from '../../src/types';
+import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getUserSetting } from '../../src/db/queries';
+import { Pokemon, PokemonVariant } from '../../src/types';
 import { TypeChip, StatBar, PokemonCryButton } from '../../src/components';
 import { useToggleSquadMutation } from '../../src/hooks/useTeamQuery';
 import { getDefensiveMatchups } from '../../src/data/typeChart';
@@ -38,6 +38,10 @@ export default function PokemonDetailScreen() {
   const toggleSquadMutation = useToggleSquadMutation(db);
 
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
+  const [variants, setVariants] = useState<PokemonVariant[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
+  const [familyVariantsMap, setFamilyVariantsMap] = useState<Record<number, PokemonVariant[]>>({});
+
   const [evolutionChain, setEvolutionChain] = useState<
     Array<{ id: number; name: string; number: string; spriteUrl: string; trigger?: string | null }>
   >([]);
@@ -52,7 +56,7 @@ export default function PokemonDetailScreen() {
   // Team Stub State
   const [inTeam, setInTeam] = useState<boolean>(false);
 
-  // Load Pokemon & Evolution Chain
+  // Load Pokemon & Evolution Chain & Variants
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
@@ -60,9 +64,10 @@ export default function PokemonDetailScreen() {
       setLoading(true);
       try {
         const numId = parseInt(id, 10);
-        const [pData, evoData, defaultShinyVal] = await Promise.all([
+        const [pData, evoData, vData, defaultShinyVal] = await Promise.all([
           getPokemonById(db, numId),
           getEvolutionChainForPokemon(db, numId),
+          getVariantsForPokemon(db, numId),
           getUserSetting(db, 'shiny_by_default', 'false'),
         ]);
 
@@ -71,12 +76,24 @@ export default function PokemonDetailScreen() {
           setPokemon(pData);
           setInTeam(Boolean(pData.isInTeam));
           setEvolutionChain(evoData);
+          setVariants(vData);
+          setSelectedVariantId(null);
           setIsShiny(shouldDefaultShiny);
+
+          // Fetch family variants map for dynamic evolution chain mapping
+          const fMap: Record<number, PokemonVariant[]> = { [numId]: vData };
+          for (const node of evoData) {
+            if (node.id !== numId) {
+              const nVars = await getVariantsForPokemon(db, node.id);
+              if (nVars.length > 0) fMap[node.id] = nVars;
+            }
+          }
+          setFamilyVariantsMap(fMap);
 
           if (shouldDefaultShiny) {
             setThemeByTypes('electric', 'dragon');
           } else {
-            setThemeForPokemon(pData); // Triggers 500ms dynamic theme transition!
+            setThemeForPokemon(pData);
           }
 
           setLoading(false);
@@ -121,6 +138,46 @@ export default function PokemonDetailScreen() {
     transform: [{ scale: heroScale.value }],
   }));
 
+  const selectedVariant = useMemo(
+    () => (selectedVariantId !== null ? variants.find((v) => v.id === selectedVariantId) || null : null),
+    [selectedVariantId, variants]
+  );
+
+  const activePrimaryType = selectedVariant ? selectedVariant.primaryType : pokemon?.primaryType || 'normal';
+  const activeSecondaryType = selectedVariant ? selectedVariant.secondaryType : pokemon?.secondaryType;
+
+  const activeNormalArtwork = selectedVariant
+    ? selectedVariant.officialArtworkUrl || selectedVariant.spriteUrl
+    : pokemon?.officialArtworkUrl || pokemon?.spriteUrl || '';
+  const activeShinyArtwork = selectedVariant
+    ? selectedVariant.shinyArtworkUrl || selectedVariant.officialArtworkUrl || selectedVariant.shinySpriteUrl || selectedVariant.spriteUrl
+    : pokemon?.shinyArtworkUrl || pokemon?.officialArtworkUrl || pokemon?.shinySpriteUrl || pokemon?.spriteUrl || '';
+
+  const activeStats = selectedVariant ? selectedVariant.stats : pokemon?.stats;
+  const activeAbilities = selectedVariant ? selectedVariant.abilities : pokemon?.abilities;
+  const activeHeight = selectedVariant?.height ?? pokemon?.height ?? 0;
+  const activeWeight = selectedVariant?.weight ?? pokemon?.weight ?? 0;
+  const activeFlavorText = selectedVariant?.flavorText || pokemon?.flavorText || '';
+
+  const handleSelectVariant = useCallback(
+    (vId: number | null) => {
+      hapticMedium();
+      setSelectedVariantId(vId);
+
+      const targetVar = vId !== null ? variants.find((v) => v.id === vId) : null;
+      if (targetVar) {
+        setThemeByTypes(targetVar.primaryType, targetVar.secondaryType || undefined);
+      } else if (pokemon) {
+        if (isShiny) {
+          setThemeByTypes('electric', 'dragon');
+        } else {
+          setThemeForPokemon(pokemon);
+        }
+      }
+    },
+    [variants, pokemon, isShiny, setThemeByTypes, setThemeForPokemon]
+  );
+
   // Handle Shiny Toggle
   const toggleShiny = useCallback(() => {
     if (!pokemon) return;
@@ -131,9 +188,13 @@ export default function PokemonDetailScreen() {
     if (nextShiny) {
       setThemeByTypes('electric', 'dragon');
     } else {
-      setThemeForPokemon(pokemon);
+      if (selectedVariant) {
+        setThemeByTypes(selectedVariant.primaryType, selectedVariant.secondaryType || undefined);
+      } else {
+        setThemeForPokemon(pokemon);
+      }
     }
-  }, [isShiny, pokemon, setThemeByTypes, setThemeForPokemon]);
+  }, [isShiny, pokemon, selectedVariant, setThemeByTypes, setThemeForPokemon]);
 
   // Filter Moves
   const filteredMoves = useMemo(() => {
@@ -144,25 +205,53 @@ export default function PokemonDetailScreen() {
   }, [pokemon?.moves, moveSearch]);
 
   // Height & Weight formatting
-  const formattedHeight = pokemon ? `${(pokemon.height / 10).toFixed(1)} m` : '';
-  const formattedWeight = pokemon ? `${(pokemon.weight / 10).toFixed(1)} kg` : '';
+  const formattedHeight = `${(activeHeight / 10).toFixed(1)} m`;
+  const formattedWeight = `${(activeWeight / 10).toFixed(1)} kg`;
 
-  const formattedName = pokemon
-    ? pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)
-    : '';
+  const formattedName = useMemo(() => {
+    if (!pokemon) return '';
+    if (selectedVariant) {
+      return `${selectedVariant.regionLabel} ${pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}`;
+    }
+    return pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+  }, [pokemon, selectedVariant]);
 
   // Stats Total calculation
   const totalStats = useMemo(() => {
-    if (!pokemon?.stats) return 0;
-    const s = pokemon.stats;
+    if (!activeStats) return 0;
+    const s = activeStats;
     return s.hp + s.attack + s.defense + s.specialAttack + s.specialDefense + s.speed;
-  }, [pokemon?.stats]);
+  }, [activeStats]);
 
   // Defensive Type Matchups calculation
   const defensiveMatchups = useMemo(() => {
-    if (!pokemon) return [];
-    return getDefensiveMatchups(pokemon.primaryType, pokemon.secondaryType);
-  }, [pokemon?.primaryType, pokemon?.secondaryType]);
+    if (!activePrimaryType) return [];
+    return getDefensiveMatchups(activePrimaryType, activeSecondaryType);
+  }, [activePrimaryType, activeSecondaryType]);
+
+  const displayEvolutionChain = useMemo(() => {
+    if (!selectedVariant) return evolutionChain;
+    return evolutionChain.map((item) => {
+      if (item.id === pokemon?.id) {
+        return {
+          ...item,
+          name: `${selectedVariant.regionLabel} ${pokemon.name}`,
+          spriteUrl: selectedVariant.officialArtworkUrl || selectedVariant.spriteUrl,
+        };
+      }
+      const matchVar = familyVariantsMap[item.id]?.find(
+        (v) => v.regionLabel.toLowerCase() === selectedVariant.regionLabel.toLowerCase()
+      );
+      if (matchVar) {
+        return {
+          ...item,
+          name: `${matchVar.regionLabel} ${item.name}`,
+          spriteUrl: matchVar.officialArtworkUrl || matchVar.spriteUrl,
+        };
+      }
+      return item;
+    });
+  }, [evolutionChain, selectedVariant, familyVariantsMap, pokemon?.id, pokemon?.name]);
 
   if (loading || !pokemon) {
     return (
@@ -224,7 +313,7 @@ export default function PokemonDetailScreen() {
               <AnimatedImage
                 sharedTransitionTag={`pokemon-image-${pokemon.id}`}
                 source={{
-                  uri: pokemon.officialArtworkUrl || pokemon.spriteUrl,
+                  uri: activeNormalArtwork,
                 }}
                 style={styles.heroArtwork}
                 contentFit="contain"
@@ -233,7 +322,7 @@ export default function PokemonDetailScreen() {
             <Animated.View style={[styles.heroArtworkWrapper, shinyArtworkStyle]}>
               <Image
                 source={{
-                  uri: pokemon.shinyArtworkUrl || pokemon.officialArtworkUrl || pokemon.shinySpriteUrl || pokemon.spriteUrl,
+                  uri: activeShinyArtwork,
                 }}
                 style={styles.heroArtwork}
                 contentFit="contain"
@@ -252,12 +341,72 @@ export default function PokemonDetailScreen() {
                 <PokemonCryButton pokemonId={pokemon.id} pokemonName={pokemon.name} />
               </View>
               <View style={styles.typesRow}>
-                <TypeChip type={pokemon.primaryType} size="medium" />
-                {pokemon.secondaryType ? (
-                  <TypeChip type={pokemon.secondaryType} size="medium" />
+                <TypeChip type={activePrimaryType} size="medium" />
+                {activeSecondaryType ? (
+                  <TypeChip type={activeSecondaryType} size="medium" />
                 ) : null}
               </View>
             </View>
+
+            {/* Regional Variant Switcher Segmented Pills */}
+            {variants.length > 0 ? (
+              <View style={styles.variantSelectorContainer}>
+                <Text style={[styles.variantSelectorLabel, { color: colorScheme.secondary }]}>
+                  FORM / REGION
+                </Text>
+                <View style={styles.variantPillRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => handleSelectVariant(null)}
+                    style={[
+                      styles.variantPill,
+                      selectedVariantId === null
+                        ? { backgroundColor: colorScheme.primary }
+                        : { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline, borderWidth: 1 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.variantPillText,
+                        selectedVariantId === null
+                          ? { color: colorScheme.onPrimary }
+                          : { color: colorScheme.onSurface },
+                      ]}
+                    >
+                      Base
+                    </Text>
+                  </TouchableOpacity>
+
+                  {variants.map((v) => {
+                    const isSelected = selectedVariantId === v.id;
+                    return (
+                      <TouchableOpacity
+                        key={v.id}
+                        activeOpacity={0.7}
+                        onPress={() => handleSelectVariant(v.id)}
+                        style={[
+                          styles.variantPill,
+                          isSelected
+                            ? { backgroundColor: colorScheme.primary }
+                            : { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline, borderWidth: 1 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.variantPillText,
+                            isSelected
+                              ? { color: colorScheme.onPrimary }
+                              : { color: colorScheme.onSurface },
+                          ]}
+                        >
+                          {v.regionLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
           {/* Physical Attributes Card (Height / Weight) */}
           <View
@@ -297,14 +446,14 @@ export default function PokemonDetailScreen() {
             </View>
 
             {/* Flavor Text */}
-            {pokemon.flavorText ? (
+            {activeFlavorText ? (
               <Text
                 style={[
                   styles.flavorText,
                   { color: colorScheme.onSurface },
                 ]}
               >
-                "{pokemon.flavorText}"
+                "{activeFlavorText}"
               </Text>
             ) : null}
           </View>
@@ -370,7 +519,7 @@ export default function PokemonDetailScreen() {
           </TouchableOpacity>
 
           {/* Section 1: Animated Base Stats Bar Chart */}
-          {pokemon.stats ? (
+          {activeStats ? (
             <View
               style={[
                 styles.card,
@@ -389,12 +538,12 @@ export default function PokemonDetailScreen() {
                 </Text>
               </View>
 
-              <StatBar label="HP" value={pokemon.stats.hp} index={0} />
-              <StatBar label="Attack" value={pokemon.stats.attack} index={1} />
-              <StatBar label="Defense" value={pokemon.stats.defense} index={2} />
-              <StatBar label="Sp. Atk" value={pokemon.stats.specialAttack} index={3} />
-              <StatBar label="Sp. Def" value={pokemon.stats.specialDefense} index={4} />
-              <StatBar label="Speed" value={pokemon.stats.speed} index={5} />
+              <StatBar label="HP" value={activeStats.hp} index={0} />
+              <StatBar label="Attack" value={activeStats.attack} index={1} />
+              <StatBar label="Defense" value={activeStats.defense} index={2} />
+              <StatBar label="Sp. Atk" value={activeStats.specialAttack} index={3} />
+              <StatBar label="Sp. Def" value={activeStats.specialDefense} index={4} />
+              <StatBar label="Speed" value={activeStats.speed} index={5} />
             </View>
           ) : null}
 
@@ -431,7 +580,7 @@ export default function PokemonDetailScreen() {
           ) : null}
 
           {/* Section 2: Evolution Chain */}
-          {evolutionChain.length > 0 ? (
+          {displayEvolutionChain.length > 0 ? (
             <View
               style={[
                 styles.card,
@@ -442,19 +591,19 @@ export default function PokemonDetailScreen() {
               ]}
             >
               <Text style={[styles.cardTitle, { color: colorScheme.onSurface }]}>
-                Evolution Family ({evolutionChain.length})
+                Evolution Family ({displayEvolutionChain.length})
               </Text>
 
               <View
                 style={
-                  evolutionChain.length <= 3
+                  displayEvolutionChain.length <= 3
                     ? styles.evolutionRow
                     : styles.evolutionGrid
                 }
               >
-                {evolutionChain.map((stage, idx) => (
+                {displayEvolutionChain.map((stage, idx) => (
                   <React.Fragment key={stage.id}>
-                    {evolutionChain.length <= 3 && idx > 0 ? (
+                    {displayEvolutionChain.length <= 3 && idx > 0 ? (
                       <View style={styles.evoArrowContainer}>
                         <Text style={[styles.evoArrow, { color: colorScheme.primary }]}>→</Text>
                       </View>
@@ -464,7 +613,7 @@ export default function PokemonDetailScreen() {
                       activeOpacity={0.8}
                       onPress={() => router.push(`/pokemon/${stage.id}`)}
                       style={[
-                        evolutionChain.length <= 3 ? styles.evoStageCard : styles.evoGridCard,
+                        displayEvolutionChain.length <= 3 ? styles.evoStageCard : styles.evoGridCard,
                         {
                           backgroundColor:
                             stage.id === pokemon.id
@@ -512,7 +661,7 @@ export default function PokemonDetailScreen() {
           ) : null}
 
           {/* Section 3: Abilities List */}
-          {pokemon.abilities && pokemon.abilities.length > 0 ? (
+          {activeAbilities && activeAbilities.length > 0 ? (
             <View
               style={[
                 styles.card,
@@ -527,7 +676,7 @@ export default function PokemonDetailScreen() {
               </Text>
 
               <View style={styles.abilitiesList}>
-                {pokemon.abilities.map((ab) => (
+                {activeAbilities.map((ab) => (
                   <View
                     key={ab.name}
                     style={[
@@ -921,5 +1070,31 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     alignItems: 'center',
+  },
+  variantSelectorContainer: {
+    gap: 6,
+    marginTop: 4,
+  },
+  variantSelectorLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    letterSpacing: 0.5,
+  },
+  variantPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  variantPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  variantPillText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
