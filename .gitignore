@@ -1,0 +1,55 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Expo & Metro
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+
+# SQLite Database & Local storage files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+pokedex.db
+
+# Logs & Debugging outputs
+*.log
+android_crash.log
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Native build folders & outputs (CNG / Managed Workflow)
+/ios
+/android
+*.apk
+*.aab
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# macOS & System files
+.DS_Store
+Thumbs.db
+*.pem
+
+# IDE / Editor folders
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
