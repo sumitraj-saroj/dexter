@@ -9,9 +9,11 @@ import {
   recordPokemonSeen,
 } from '../db/queries';
 import { TrainerProfile, PokemonType } from '../types';
+import { useAchievement } from '../context/AchievementContext';
 
 export function useTrainerProfile(db: SQLiteDatabase | null) {
   const queryClient = useQueryClient();
+  const { checkAndNotifyAchievements } = useAchievement();
 
   const profileQuery = useQuery<TrainerProfile>({
     queryKey: ['trainerProfile'],
@@ -59,12 +61,16 @@ export function useTrainerProfile(db: SQLiteDatabase | null) {
       if (!db) throw new Error('Database not initialized');
       return await togglePokemonCaught(db, pokemonId);
     },
-    onSuccess: () => {
+    onSuccess: async (res) => {
       queryClient.invalidateQueries({ queryKey: ['trainerProfile'] });
       queryClient.invalidateQueries({ queryKey: ['completionStats'] });
       queryClient.invalidateQueries({ queryKey: ['favoriteType'] });
       queryClient.invalidateQueries({ queryKey: ['pokemonList'] });
       queryClient.invalidateQueries({ queryKey: ['pokemon'] });
+      queryClient.invalidateQueries({ queryKey: ['achievementsSummary'] });
+      if (res?.isCaught) {
+        await checkAndNotifyAchievements();
+      }
     },
   });
 

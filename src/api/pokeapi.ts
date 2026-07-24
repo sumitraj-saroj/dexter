@@ -229,6 +229,26 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
     pData.sprites?.other?.['official-artwork']?.front_shiny ||
     `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pData.id}.png`;
 
+  const home_artwork_url = pData.sprites?.other?.home?.front_default || null;
+  const shiny_home_artwork_url = pData.sprites?.other?.home?.front_shiny || null;
+  const dream_world_url = pData.sprites?.other?.dream_world?.front_default || null;
+  const pixel_default_url = pData.sprites?.front_default || null;
+  const pixel_gen1_url = pData.sprites?.versions?.['generation-i']?.['red-blue']?.front_default || null;
+  const pixel_gen3_url = pData.sprites?.versions?.['generation-iii']?.['emerald']?.front_default || null;
+  const animated_url = pData.sprites?.versions?.['generation-v']?.['black-white']?.animated?.front_default || null;
+
+  const spritesObj = {
+    official_artwork_url,
+    shiny_artwork_url,
+    home_artwork_url,
+    shiny_home_artwork_url,
+    dream_world_url,
+    pixel_default_url,
+    pixel_gen1_url,
+    pixel_gen3_url,
+    animated_url,
+  };
+
   const formattedNumber = `#${String(speciesId).padStart(3, '0')}`;
 
   const speciesName = sData.name || pData.name;
@@ -240,6 +260,7 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
   ]);
 
   return {
+    sprites: spritesObj,
     pokemon: {
       id: speciesId,
       name: speciesName,

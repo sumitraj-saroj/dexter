@@ -18,11 +18,13 @@ import { useAppDb } from '../_layout';
 import { getQuizQuestionPokemon, saveQuizScore, getTopQuizScores, recordQuizAnswer, recordPokemonSeen } from '../../src/db/queries';
 import { Pokemon, QuizScoreRecord } from '../../src/types';
 import { hapticSuccess, hapticError, hapticLight } from '../../src/utils/haptics';
+import { useAchievement } from '../../src/context/AchievementContext';
 
 export default function QuizScreen() {
   const db = useAppDb();
   const router = useRouter();
   const { colorScheme, isDark } = useAppTheme();
+  const { checkAndNotifyAchievements } = useAchievement();
 
   // Question & state
   const [question, setQuestion] = useState<{ target: Pokemon; options: Pokemon[] } | null>(null);
@@ -118,8 +120,9 @@ export default function QuizScreen() {
           if (res.isNewHighScore) {
             hapticSuccess();
           }
+          await checkAndNotifyAchievements({ streak: finalBestStreak });
         } catch (e) {
-          console.error('Error saving score:', e);
+          console.error('Error saving score or checking achievements:', e);
         }
         setIsGameOver(true);
       }, 1300);

@@ -158,7 +158,31 @@ export interface PokemonSpecialForm {
   abilities: PokemonAbility[];
 }
 
+export interface PokemonSprites {
+  pokemonId: number;
+  officialArtworkUrl: string | null;
+  shinyArtworkUrl: string | null;
+  homeArtworkUrl: string | null;
+  shinyHomeArtworkUrl: string | null;
+  dreamWorldUrl: string | null;
+  pixelDefaultUrl: string | null;
+  pixelGen1Url: string | null;
+  pixelGen3Url: string | null;
+  animatedUrl: string | null;
+}
+
 export interface FullPokemonData {
+  sprites?: {
+    official_artwork_url: string | null;
+    shiny_artwork_url: string | null;
+    home_artwork_url: string | null;
+    shiny_home_artwork_url: string | null;
+    dream_world_url: string | null;
+    pixel_default_url: string | null;
+    pixel_gen1_url: string | null;
+    pixel_gen3_url: string | null;
+    animated_url: string | null;
+  };
   pokemon: {
     id: number;
     name: string;
@@ -314,3 +338,45 @@ export interface CompetitiveBuild {
   heldItem?: string | null;
   notes?: string | null;
 }
+
+export type AchievementCategory = 'Catching' | 'Quiz' | 'Engagement';
+
+export interface AchievementDataStats {
+  totalCaughtCount: number;
+  totalDexCount: number;
+  genStats: Record<number, { caught: number; total: number }>;
+  typeCounts: Record<string, number>;
+  legendaryMythicalCount: number;
+  shinyOwnedCount: number;
+  alphaOwnedCount: number;
+  quizTotalCorrect: number;
+  quizTotalAnswered: number;
+  quizBestStreak: number;
+  openStreakDays: number;
+  competitiveBuildsCount: number;
+}
+
+export interface AchievementDefinition {
+  key: string;
+  title: string;
+  description: string;
+  icon: string;
+  category: AchievementCategory;
+  condition: (stats: AchievementDataStats) => boolean;
+}
+
+export interface AchievementRecord {
+  id?: number;
+  key: string;
+  title: string;
+  description: string;
+  icon: string;
+  category: AchievementCategory;
+  unlockedDate: string;
+}
+
+export interface AchievementWithStatus extends Omit<AchievementDefinition, 'condition'> {
+  isUnlocked: boolean;
+  unlockedDate: string | null;
+}
+

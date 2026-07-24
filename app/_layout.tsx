@@ -7,17 +7,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '../src/theme';
 import { migrateDbIfNeeded, checkAndUpdateDailyStreak } from '../src/db';
+import { AchievementProvider } from '../src/context/AchievementContext';
+import { checkAchievements } from '../src/db/queries';
+import { DbContext, useAppDb } from '../src/context/DbContext';
+
+export { DbContext, useAppDb };
 
 // Prevent splash screen from auto-hiding before initialization
 SplashScreen.preventAutoHideAsync().catch(() => {});
-
-export const DbContext = createContext<SQLiteDatabase | null>(null);
-
-export function useAppDb() {
-  const ctx = useContext(DbContext);
-  if (!ctx) throw new Error('useAppDb must be used within DbContext');
-  return ctx;
-}
 
 export default function RootLayout() {
   const [queryClient] = useState(
@@ -41,6 +38,7 @@ export default function RootLayout() {
         const database = await openDatabaseAsync('pokedex.db');
         await migrateDbIfNeeded(database);
         await checkAndUpdateDailyStreak(database);
+        await checkAchievements(database);
         if (isMounted) setDb(database);
       } catch (e) {
         console.error('Failed to initialize database', e);
@@ -62,17 +60,20 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <DbContext.Provider value={db}>
           <ThemeProvider>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                animation: 'slide_from_right',
-              }}
-            >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="settings" options={{ headerShown: false }} />
-              <Stack.Screen name="profile" options={{ headerShown: false }} />
-              <Stack.Screen name="pokemon/[id]" options={{ headerShown: false }} />
-            </Stack>
+            <AchievementProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  animation: 'slide_from_right',
+                }}
+              >
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="settings" options={{ headerShown: false }} />
+                <Stack.Screen name="profile" options={{ headerShown: false }} />
+                <Stack.Screen name="achievements" options={{ headerShown: false }} />
+                <Stack.Screen name="pokemon/[id]" options={{ headerShown: false }} />
+              </Stack>
+            </AchievementProvider>
           </ThemeProvider>
         </DbContext.Provider>
       </QueryClientProvider>

@@ -7,13 +7,18 @@ import {
   toggleCompetitiveBuild,
 } from '../db/queries';
 
+import { useAchievement } from '../context/AchievementContext';
+
 export function useCollectionStatus(db: SQLiteDatabase | null) {
   const queryClient = useQueryClient();
+  const { checkAndNotifyAchievements } = useAchievement();
 
-  const invalidateAll = () => {
+  const invalidateAll = async () => {
     queryClient.invalidateQueries({ queryKey: ['pokemonList'] });
     queryClient.invalidateQueries({ queryKey: ['pokemon'] });
     queryClient.invalidateQueries({ queryKey: ['favorites'] });
+    queryClient.invalidateQueries({ queryKey: ['achievementsSummary'] });
+    await checkAndNotifyAchievements();
   };
 
   const toggleFavoriteMutation = useMutation({

@@ -148,6 +148,45 @@ export async function insertSpecialForm(db: any, sf: NonNullable<FullPokemonData
   }
 }
 
+export async function insertSprites(db: any, pokemonId: number, s: any): Promise<void> {
+  if (!s) return;
+  if (typeof db.runAsync === 'function') {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO pokemon_sprites (pokemon_id, official_artwork_url, shiny_artwork_url, home_artwork_url, shiny_home_artwork_url, dream_world_url, pixel_default_url, pixel_gen1_url, pixel_gen3_url, animated_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        pokemonId,
+        s.official_artwork_url || null,
+        s.shiny_artwork_url || null,
+        s.home_artwork_url || null,
+        s.shiny_home_artwork_url || null,
+        s.dream_world_url || null,
+        s.pixel_default_url || null,
+        s.pixel_gen1_url || null,
+        s.pixel_gen3_url || null,
+        s.animated_url || null,
+      ]
+    );
+  } else if (typeof db.prepare === 'function') {
+    const stmt = db.prepare(
+      `INSERT OR REPLACE INTO pokemon_sprites (pokemon_id, official_artwork_url, shiny_artwork_url, home_artwork_url, shiny_home_artwork_url, dream_world_url, pixel_default_url, pixel_gen1_url, pixel_gen3_url, animated_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(
+      pokemonId,
+      s.official_artwork_url || null,
+      s.shiny_artwork_url || null,
+      s.home_artwork_url || null,
+      s.shiny_home_artwork_url || null,
+      s.dream_world_url || null,
+      s.pixel_default_url || null,
+      s.pixel_gen1_url || null,
+      s.pixel_gen3_url || null,
+      s.animated_url || null
+    );
+  }
+}
+
 export async function isDatabaseSynced(db: any): Promise<boolean> {
   try {
     let count = 0;
@@ -257,6 +296,7 @@ export async function syncNationalPokemon(
         DELETE FROM pokemon_stats;
         DELETE FROM evolution_chain;
         DELETE FROM generations;
+        DELETE FROM pokemon_sprites;
         DELETE FROM pokemon;
       `);
 
@@ -268,7 +308,7 @@ export async function syncNationalPokemon(
       }
 
       for (const item of pokemonList) {
-        const { pokemon, stats, abilities, moves, evolution, variants, specialForms } = item;
+        const { pokemon, stats, abilities, moves, evolution, variants, specialForms, sprites } = item;
 
         await db.runAsync(
           `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
@@ -290,6 +330,10 @@ export async function syncNationalPokemon(
             pokemon.shiny_artwork_url,
           ]
         );
+
+        if (sprites) {
+          await insertSprites(db, pokemon.id, sprites);
+        }
 
         await db.runAsync(
           `INSERT INTO pokemon_stats (pokemon_id, hp, attack, defense, sp_attack, sp_defense, speed)
@@ -355,6 +399,7 @@ export async function syncNationalPokemon(
       'DELETE FROM pokemon_stats;',
       'DELETE FROM evolution_chain;',
       'DELETE FROM generations;',
+      'DELETE FROM pokemon_sprites;',
       'DELETE FROM pokemon;',
     ];
     for (const q of deleteQueries) db.prepare(q).run();
@@ -391,7 +436,7 @@ export async function syncNationalPokemon(
         }
 
         for (const item of pList) {
-          const { pokemon, stats, abilities, moves, evolution, variants, specialForms } = item;
+          const { pokemon, stats, abilities, moves, evolution, variants, specialForms, sprites } = item;
           insertPokemon.run(
             pokemon.id,
             pokemon.name,
@@ -408,6 +453,9 @@ export async function syncNationalPokemon(
             pokemon.official_artwork_url,
             pokemon.shiny_artwork_url
           );
+          if (sprites) {
+            insertSprites(db, pokemon.id, sprites);
+          }
           insertStats.run(
             pokemon.id,
             stats.hp,

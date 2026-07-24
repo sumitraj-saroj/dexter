@@ -217,4 +217,32 @@ CREATE TABLE IF NOT EXISTS competitive_builds (
 );
 
 CREATE INDEX IF NOT EXISTS idx_comp_builds_pokemon_id ON competitive_builds(pokemon_id);
+
+CREATE TABLE IF NOT EXISTS achievements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  category TEXT NOT NULL,
+  unlocked_date TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_achievements_key ON achievements(key);
+
+CREATE TABLE IF NOT EXISTS pokemon_sprites (
+  pokemon_id INTEGER PRIMARY KEY,
+  official_artwork_url TEXT,
+  shiny_artwork_url TEXT,
+  home_artwork_url TEXT,
+  shiny_home_artwork_url TEXT,
+  dream_world_url TEXT,
+  pixel_default_url TEXT,
+  pixel_gen1_url TEXT,
+  pixel_gen3_url TEXT,
+  animated_url TEXT,
+  FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+);
 `;
+
+

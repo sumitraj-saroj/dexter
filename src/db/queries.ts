@@ -5,6 +5,7 @@ import {
   PokemonAbility,
   PokemonMove,
   PokemonSpecialForm,
+  PokemonSprites,
   PokemonStat,
   PokemonType,
   PokemonVariant,
@@ -12,7 +13,12 @@ import {
   TeamMember,
   TrainerProfile,
   CompetitiveBuild,
+  AchievementRecord,
+  AchievementWithStatus,
+  AchievementDataStats,
+  AchievementDefinition,
 } from '../types';
+import { ACHIEVEMENTS } from '../data/achievements';
 
 function mapRowToPokemon(row: any): Pokemon {
   return {
@@ -59,7 +65,7 @@ async function runSingleQuery(db: any, sql: string, params: any[] = []): Promise
   return null;
 }
 
-async function runExecuteQuery(db: any, sql: string, params: any[] = []): Promise<void> {
+export async function runExecuteQuery(db: any, sql: string, params: any[] = []): Promise<void> {
   if (typeof db.runAsync === 'function') {
     await db.runAsync(sql, params);
   } else if (typeof db.prepare === 'function') {
@@ -147,6 +153,24 @@ export async function getPokemonById(db: any, id: number): Promise<Pokemon | nul
   }
 
   return pokemon;
+}
+
+export async function getSpritesForPokemon(db: any, pokemonId: number): Promise<PokemonSprites | null> {
+  const sql = `SELECT * FROM pokemon_sprites WHERE pokemon_id = ?;`;
+  const row = await runSingleQuery(db, sql, [pokemonId]);
+  if (!row) return null;
+  return {
+    pokemonId: row.pokemon_id,
+    officialArtworkUrl: row.official_artwork_url || null,
+    shinyArtworkUrl: row.shiny_artwork_url || null,
+    homeArtworkUrl: row.home_artwork_url || null,
+    shinyHomeArtworkUrl: row.shiny_home_artwork_url || null,
+    dreamWorldUrl: row.dream_world_url || null,
+    pixelDefaultUrl: row.pixel_default_url || null,
+    pixelGen1Url: row.pixel_gen1_url || null,
+    pixelGen3Url: row.pixel_gen3_url || null,
+    animatedUrl: row.animated_url || null,
+  };
 }
 
 export async function searchPokemon(db: any, query: string): Promise<Pokemon[]> {
@@ -1139,6 +1163,189 @@ export async function deleteCompetitiveBuild(
   await runExecuteQuery(db, `DELETE FROM competitive_builds WHERE id = ?;`, [buildId]);
   await syncHasCompetitiveBuildFlag(db, pokemonId);
 }
+
+// --- Achievement System Queries ---
+
+export async function getUnlockedAchievements(db: any): Promise<AchievementRecord[]> {
+  const sql = `SELECT * FROM achievements ORDER BY id ASC;`;
+  const rows = await runSelectQuery(db, sql);
+  return rows.map((r: any) => ({
+    id: r.id,
+    key: r.key,
+    title: r.title,
+    description: r.description,
+    icon: r.icon,
+    category: r.category,
+    unlockedDate: r.unlocked_date,
+  }));
+}
+
+export async function getAchievementDataStats(
+  db: any,
+  sessionQuizStreak?: number
+): Promise<AchievementDataStats> {
+  const caughtRow = await runSingleQuery(db, `SELECT COUNT(*) as count FROM pokemon_caught;`);
+  const totalDexRow = await runSingleQuery(db, `SELECT COUNT(*) as count FROM pokemon;`);
+
+  // Gen stats
+  const genRows = await runSelectQuery(
+    db,
+    `SELECT g.id as gen_id,
+            COUNT(c.pokemon_id) as caught,
+            (g.end_id - g.start_id + 1) as total
+     FROM generations g
+     LEFT JOIN pokemon_caught c ON c.pokemon_id >= g.start_id AND c.pokemon_id <= g.end_id
+     GROUP BY g.id;`
+  );
+  const genStats: Record<number, { caught: number; total: number }> = {};
+  for (const r of genRows) {
+    genStats[r.gen_id] = { caught: r.caught || 0, total: r.total || 0 };
+  }
+
+  // Type counts for caught pokemon
+  const typeRows = await runSelectQuery(
+    db,
+    `SELECT p.primary_type, p.secondary_type
+     FROM pokemon p
+     JOIN pokemon_caught c ON c.pokemon_id = p.id;`
+  );
+  const typeCounts: Record<string, number> = {};
+  for (const r of typeRows) {
+    if (r.primary_type) {
+      const pt = r.primary_type.toLowerCase();
+      typeCounts[pt] = (typeCounts[pt] || 0) + 1;
+    }
+    if (r.secondary_type) {
+      const st = r.secondary_type.toLowerCase();
+      typeCounts[st] = (typeCounts[st] || 0) + 1;
+    }
+  }
+
+  // Legendary / Mythical caught count
+  const legRow = await runSingleQuery(
+    db,
+    `SELECT COUNT(*) as count
+     FROM pokemon_caught c
+     JOIN pokemon p ON p.id = c.pokemon_id
+     WHERE p.is_legendary = 1 OR p.is_mythical = 1;`
+  );
+
+  // Shiny & Alpha owned counts
+  const shinyRow = await runSingleQuery(
+    db,
+    `SELECT COUNT(*) as count FROM pokemon_collection_status WHERE shiny_owned = 1;`
+  );
+  const alphaRow = await runSingleQuery(
+    db,
+    `SELECT COUNT(*) as count FROM pokemon_collection_status WHERE is_alpha = 1;`
+  );
+
+  // Profile stats
+  const profileRow = await runSingleQuery(
+    db,
+    `SELECT total_correct, total_answered, current_streak FROM trainer_profile WHERE id = 1;`
+  );
+
+  // Quiz best streak across sessions
+  const quizStreakRow = await runSingleQuery(
+    db,
+    `SELECT MAX(best_streak) as max_streak FROM quiz_scores;`
+  );
+
+  // Competitive builds count
+  const buildsRow = await runSingleQuery(
+    db,
+    `SELECT COUNT(*) as count FROM competitive_builds;`
+  );
+
+  const dbMaxQuizStreak = quizStreakRow?.max_streak || 0;
+  const finalQuizBestStreak = Math.max(dbMaxQuizStreak, sessionQuizStreak || 0);
+
+  return {
+    totalCaughtCount: caughtRow?.count || 0,
+    totalDexCount: totalDexRow?.count || 0,
+    genStats,
+    typeCounts,
+    legendaryMythicalCount: legRow?.count || 0,
+    shinyOwnedCount: shinyRow?.count || 0,
+    alphaOwnedCount: alphaRow?.count || 0,
+    quizTotalCorrect: profileRow?.total_correct || 0,
+    quizTotalAnswered: profileRow?.total_answered || 0,
+    quizBestStreak: finalQuizBestStreak,
+    openStreakDays: profileRow?.current_streak || 0,
+    competitiveBuildsCount: buildsRow?.count || 0,
+  };
+}
+
+export async function checkAchievements(
+  db: any,
+  sessionQuizStats?: { streak?: number }
+): Promise<AchievementDefinition[]> {
+  try {
+    const unlockedList = await getUnlockedAchievements(db);
+    const unlockedKeys = new Set(unlockedList.map((u) => u.key));
+
+    const stats = await getAchievementDataStats(db, sessionQuizStats?.streak);
+    const newlyUnlocked: AchievementDefinition[] = [];
+    const nowISO = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    for (const ach of ACHIEVEMENTS) {
+      if (unlockedKeys.has(ach.key)) continue;
+
+      if (ach.condition(stats)) {
+        await runExecuteQuery(
+          db,
+          `INSERT OR IGNORE INTO achievements (key, title, description, icon, category, unlocked_date) VALUES (?, ?, ?, ?, ?, ?);`,
+          [ach.key, ach.title, ach.description, ach.icon, ach.category, nowISO]
+        );
+        newlyUnlocked.push(ach);
+      }
+    }
+
+    return newlyUnlocked;
+  } catch (err) {
+    console.error('Failed checking achievements:', err);
+    return [];
+  }
+}
+
+export async function getAchievementsSummary(db: any): Promise<{
+  unlockedCount: number;
+  totalCount: number;
+  unlockedPercentage: number;
+  achievements: AchievementWithStatus[];
+}> {
+  const unlockedRecords = await getUnlockedAchievements(db);
+  const unlockedMap = new Map<string, string>();
+  for (const r of unlockedRecords) {
+    unlockedMap.set(r.key, r.unlockedDate);
+  }
+
+  const achievements: AchievementWithStatus[] = ACHIEVEMENTS.map((def) => {
+    const unlockedDate = unlockedMap.get(def.key) || null;
+    return {
+      key: def.key,
+      title: def.title,
+      description: def.description,
+      icon: def.icon,
+      category: def.category,
+      isUnlocked: unlockedDate !== null,
+      unlockedDate,
+    };
+  });
+
+  const unlockedCount = unlockedMap.size;
+  const totalCount = ACHIEVEMENTS.length;
+  const unlockedPercentage = totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0;
+
+  return {
+    unlockedCount,
+    totalCount,
+    unlockedPercentage,
+    achievements,
+  };
+}
+
 
 
 

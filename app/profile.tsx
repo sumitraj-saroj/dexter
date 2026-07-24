@@ -14,9 +14,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import { useAppTheme } from '../src/theme';
 import { useAppDb } from './_layout';
 import { useTrainerProfile } from '../src/hooks/useTrainerProfile';
+import { getAchievementsSummary } from '../src/db/queries';
 import { AVATAR_OPTIONS, getAvatarById, AvatarOption } from '../src/utils/avatars';
 import { TypeChip } from '../src/components';
 import { hapticLight, hapticSuccess } from '../src/utils/haptics';
@@ -33,6 +35,12 @@ export default function ProfileScreen() {
     favoriteType,
     updateProfile,
   } = useTrainerProfile(db);
+
+  const achievementsQuery = useQuery({
+    queryKey: ['achievementsSummary'],
+    queryFn: () => getAchievementsSummary(db),
+    enabled: Boolean(db),
+  });
 
   // Edit Name Modal state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -221,6 +229,45 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
+
+        {/* Achievements Card */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => {
+            hapticLight();
+            router.push('/achievements');
+          }}
+          style={[
+            styles.card,
+            { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline },
+          ]}
+        >
+          <View style={styles.cardHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <Ionicons name="trophy-outline" size={20} color={colorScheme.primary} />
+              <Text style={[styles.cardTitle, { color: colorScheme.onSurface }]}>
+                Achievements
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colorScheme.primary }}>
+                {achievementsQuery.data?.unlockedCount || 0} / {achievementsQuery.data?.totalCount || 18} Unlocked
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colorScheme.secondary} />
+            </View>
+          </View>
+          <View style={[styles.progressBarTrack, { backgroundColor: colorScheme.surfaceVariant, marginTop: 10 }]}>
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${achievementsQuery.data?.unlockedPercentage || 0}%`,
+                  backgroundColor: colorScheme.primary,
+                },
+              ]}
+            />
+          </View>
+        </TouchableOpacity>
 
         {/* Grid 2x2 for Stats: Favorite Type, Quiz Win Rate, Current Streak */}
         <View style={styles.gridContainer}>

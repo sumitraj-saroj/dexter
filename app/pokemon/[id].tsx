@@ -15,11 +15,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme, AnimatedThemeView } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getUserSetting, setUserSetting } from '../../src/db/queries';
-import { insertSpecialForm, insertVariant } from '../../src/db/sync';
-import { fetchSpecialFormsForSpecies, fetchRegionalVariantsForSpecies } from '../../src/api/pokeapi';
-import { Pokemon, PokemonVariant, PokemonSpecialForm } from '../../src/types';
-import { TypeChip, StatBar, PokemonCryButton, DetailOnboardingOverlay, StatusTooltipOverlay, StepKey, TargetLayout } from '../../src/components';
+import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getSpritesForPokemon, getUserSetting, setUserSetting } from '../../src/db/queries';
+import { insertSpecialForm, insertVariant, insertSprites } from '../../src/db/sync';
+import { fetchSpecialFormsForSpecies, fetchRegionalVariantsForSpecies, fetchSinglePokemon } from '../../src/api/pokeapi';
+import { Pokemon, PokemonVariant, PokemonSpecialForm, PokemonSprites } from '../../src/types';
+import { TypeChip, StatBar, PokemonCryButton, DetailOnboardingOverlay, StatusTooltipOverlay, StepKey, TargetLayout, SpriteGallery, GalleryItem } from '../../src/components';
 import { useToggleSquadMutation } from '../../src/hooks/useTeamQuery';
 import { useTrainerProfile } from '../../src/hooks/useTrainerProfile';
 import { useCollectionStatus } from '../../src/hooks/useCollectionStatus';
@@ -46,6 +46,8 @@ export default function PokemonDetailScreen() {
   const toggleSquadMutation = useToggleSquadMutation(db);
 
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
+  const [sprites, setSprites] = useState<PokemonSprites | null>(null);
+  const [selectedGalleryItem, setSelectedGalleryItem] = useState<GalleryItem | null>(null);
   const [variants, setVariants] = useState<PokemonVariant[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [familyVariantsMap, setFamilyVariantsMap] = useState<Record<number, PokemonVariant[]>>({});
@@ -201,7 +203,7 @@ export default function PokemonDetailScreen() {
   }, []);
 
 
-  // Load Pokemon & Evolution Chain & Variants & Special Forms
+  // Load Pokemon & Evolution Chain & Variants & Special Forms & Sprites
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
@@ -209,11 +211,12 @@ export default function PokemonDetailScreen() {
       setLoading(true);
       try {
         const numId = parseInt(id, 10);
-        let [pData, evoData, vData, sfData, defaultShinyVal, hasSeenOnboardingVal] = await Promise.all([
+        let [pData, evoData, vData, sfData, sData, defaultShinyVal, hasSeenOnboardingVal] = await Promise.all([
           getPokemonById(db, numId),
           getEvolutionChainForPokemon(db, numId),
           getVariantsForPokemon(db, numId),
           getSpecialFormsForPokemon(db, numId),
+          getSpritesForPokemon(db, numId),
           getUserSetting(db, 'shiny_by_default', 'false'),
           getUserSetting(db, 'has_seen_detail_onboarding', 'false'),
         ]);
@@ -221,6 +224,7 @@ export default function PokemonDetailScreen() {
         if (isMounted && pData) {
           const shouldDefaultShiny = defaultShinyVal === 'true';
           setPokemon(pData);
+          setSprites(sData);
           setInTeam(Boolean(pData.isInTeam));
           setIsCaught(Boolean(pData.isCaught));
           setIsFavorite(Boolean(pData.isFavorite));
@@ -242,6 +246,21 @@ export default function PokemonDetailScreen() {
               setTourStepIndex(0);
               setTourVisible(true);
             }, 450);
+          }
+
+          // Background fetch & cache sprites if missing in DB
+          if (!sData) {
+            fetchSinglePokemon(numId)
+              .then(async (fetched) => {
+                if (fetched && fetched.sprites) {
+                  await insertSprites(db, numId, fetched.sprites);
+                  const freshSprites = await getSpritesForPokemon(db, numId);
+                  if (isMounted && freshSprites) {
+                    setSprites(freshSprites);
+                  }
+                }
+              })
+              .catch(() => {});
           }
 
           // Fetch family variants map for dynamic evolution chain mapping
@@ -369,6 +388,11 @@ export default function PokemonDetailScreen() {
     transform: [{ scale: heroScale.value * alphaScale.value }],
   }));
 
+  const galleryArtworkStyle = useAnimatedStyle(() => ({
+    opacity: heroMountOpacity.value,
+    transform: [{ scale: heroScale.value * alphaScale.value }],
+  }));
+
   const selectedVariant = useMemo(
     () => (selectedVariantId !== null ? variants.find((v) => v.id === selectedVariantId) || null : null),
     [selectedVariantId, variants]
@@ -426,6 +450,7 @@ export default function PokemonDetailScreen() {
     (vId: number | null) => {
       hapticMedium();
       setSelectedVariantId(vId);
+      setSelectedGalleryItem(null);
       // Reverting special form if active when changing regional variant
       if (isSpecialFormActive) {
         setIsSpecialFormActive(false);
@@ -451,6 +476,7 @@ export default function PokemonDetailScreen() {
       hapticMedium();
       setIsSpecialFormActive(true);
       setSelectedSpecialFormId(formId);
+      setSelectedGalleryItem(null);
 
       const targetForm = specialForms.find((sf) => sf.id === formId);
       if (targetForm) {
@@ -464,6 +490,7 @@ export default function PokemonDetailScreen() {
     (formId: number) => {
       hapticMedium();
       setSelectedSpecialFormId(formId);
+      setSelectedGalleryItem(null);
 
       const targetForm = specialForms.find((sf) => sf.id === formId);
       if (targetForm) {
@@ -477,6 +504,7 @@ export default function PokemonDetailScreen() {
     hapticMedium();
     setIsSpecialFormActive(false);
     setSelectedSpecialFormId(null);
+    setSelectedGalleryItem(null);
 
     if (selectedVariant) {
       setThemeByTypes(selectedVariant.primaryType, selectedVariant.secondaryType || undefined);
@@ -495,6 +523,7 @@ export default function PokemonDetailScreen() {
     hapticMedium();
     const nextShiny = !isShiny;
     setIsShiny(nextShiny);
+    setSelectedGalleryItem(null);
 
     if (nextShiny) {
       setThemeByTypes('electric', 'dragon');
@@ -646,25 +675,46 @@ export default function PokemonDetailScreen() {
             {isAlphaActive ? (
               <Animated.View style={[styles.alphaGlowCircle, alphaGlowStyle]} />
             ) : null}
-            <Animated.View style={[styles.heroArtworkWrapper, normalArtworkStyle]}>
-              <AnimatedImage
-                sharedTransitionTag={`pokemon-image-${pokemon.id}`}
-                source={{
-                  uri: activeNormalArtwork,
-                }}
-                style={styles.heroArtwork}
-                contentFit="contain"
-              />
-            </Animated.View>
-            <Animated.View style={[styles.heroArtworkWrapper, shinyArtworkStyle]}>
-              <Image
-                source={{
-                  uri: activeShinyArtwork,
-                }}
-                style={styles.heroArtwork}
-                contentFit="contain"
-              />
-            </Animated.View>
+
+            {selectedGalleryItem ? (
+              <Animated.View style={[styles.heroArtworkWrapper, galleryArtworkStyle]}>
+                <Image
+                  source={{ uri: selectedGalleryItem.url }}
+                  style={[
+                    styles.heroArtwork,
+                    selectedGalleryItem.isPixel && ({
+                      width: 180,
+                      height: 180,
+                      imageRendering: 'pixelated',
+                    } as any),
+                  ]}
+                  contentFit="contain"
+                  transition={200}
+                />
+              </Animated.View>
+            ) : (
+              <>
+                <Animated.View style={[styles.heroArtworkWrapper, normalArtworkStyle]}>
+                  <AnimatedImage
+                    sharedTransitionTag={`pokemon-image-${pokemon.id}`}
+                    source={{
+                      uri: activeNormalArtwork,
+                    }}
+                    style={styles.heroArtwork}
+                    contentFit="contain"
+                  />
+                </Animated.View>
+                <Animated.View style={[styles.heroArtworkWrapper, shinyArtworkStyle]}>
+                  <Image
+                    source={{
+                      uri: activeShinyArtwork,
+                    }}
+                    style={styles.heroArtwork}
+                    contentFit="contain"
+                  />
+                </Animated.View>
+              </>
+            )}
           </View>
 
           {/* Staggered Body Content */}
@@ -882,6 +932,16 @@ export default function PokemonDetailScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Sprite Gallery Section */}
+            <SpriteGallery
+              sprites={sprites}
+              activeVariant={selectedVariant}
+              activeSpecialForm={selectedSpecialForm}
+              isShiny={isShiny}
+              selectedItemId={selectedGalleryItem?.id || null}
+              onSelectItem={(item) => setSelectedGalleryItem(item)}
+            />
 
             {/* Special Battle & Alternate Forms Segmented Pills */}
             {specialForms.length > 0 ? (
