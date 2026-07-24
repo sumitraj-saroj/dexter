@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getQuizQuestionPokemon, saveQuizScore, getTopQuizScores } from '../../src/db/queries';
+import { getQuizQuestionPokemon, saveQuizScore, getTopQuizScores, recordQuizAnswer, recordPokemonSeen } from '../../src/db/queries';
 import { Pokemon, QuizScoreRecord } from '../../src/types';
 import { hapticSuccess, hapticError, hapticLight } from '../../src/utils/haptics';
 
@@ -88,6 +88,8 @@ export default function QuizScreen() {
     setIsRevealed(true);
 
     const isCorrect = option.id === question.target.id;
+    recordQuizAnswer(db, isCorrect).catch(() => {});
+    recordPokemonSeen(db, question.target.id).catch(() => {});
     if (isCorrect) {
       hapticSuccess();
       const nextScore = score + 1;

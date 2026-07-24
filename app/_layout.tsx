@@ -6,7 +6,7 @@ import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '../src/theme';
-import { migrateDbIfNeeded } from '../src/db';
+import { migrateDbIfNeeded, checkAndUpdateDailyStreak } from '../src/db';
 
 // Prevent splash screen from auto-hiding before initialization
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -40,6 +40,7 @@ export default function RootLayout() {
       try {
         const database = await openDatabaseAsync('pokedex.db');
         await migrateDbIfNeeded(database);
+        await checkAndUpdateDailyStreak(database);
         if (isMounted) setDb(database);
       } catch (e) {
         console.error('Failed to initialize database', e);
@@ -69,6 +70,7 @@ export default function RootLayout() {
             >
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="settings" options={{ headerShown: false }} />
+              <Stack.Screen name="profile" options={{ headerShown: false }} />
               <Stack.Screen name="pokemon/[id]" options={{ headerShown: false }} />
             </Stack>
           </ThemeProvider>
