@@ -58,8 +58,12 @@ CREATE TABLE IF NOT EXISTS team (
   FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS favorites (
+CREATE TABLE IF NOT EXISTS pokemon_collection_status (
   pokemon_id INTEGER PRIMARY KEY,
+  is_favorite INTEGER DEFAULT 0,
+  shiny_owned INTEGER DEFAULT 0,
+  is_alpha INTEGER DEFAULT 0,
+  has_competitive_build INTEGER DEFAULT 0,
   FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
 );
 
@@ -161,4 +165,56 @@ CREATE TABLE IF NOT EXISTS pokemon_special_form_abilities (
 
 CREATE INDEX IF NOT EXISTS idx_special_forms_base_pokemon_id ON pokemon_special_forms(base_pokemon_id);
 CREATE INDEX IF NOT EXISTS idx_special_form_abilities_form_id ON pokemon_special_form_abilities(form_id);
+
+CREATE TABLE IF NOT EXISTS pokemon_seen (
+  pokemon_id INTEGER PRIMARY KEY,
+  first_seen_date TEXT NOT NULL,
+  FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS pokemon_caught (
+  pokemon_id INTEGER PRIMARY KEY,
+  caught_date TEXT NOT NULL,
+  FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS trainer_profile (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  name TEXT NOT NULL DEFAULT 'Trainer',
+  avatar_id TEXT NOT NULL DEFAULT 'pikachu',
+  xp INTEGER NOT NULL DEFAULT 0,
+  current_streak INTEGER NOT NULL DEFAULT 0,
+  total_correct INTEGER NOT NULL DEFAULT 0,
+  total_answered INTEGER NOT NULL DEFAULT 0,
+  last_open_date TEXT,
+  created_date TEXT
+);
+
+CREATE TABLE IF NOT EXISTS competitive_builds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pokemon_id INTEGER NOT NULL,
+  build_name TEXT NOT NULL DEFAULT 'Standard Build',
+  nature TEXT NOT NULL DEFAULT 'Adamant',
+  evs_hp INTEGER DEFAULT 0,
+  evs_attack INTEGER DEFAULT 0,
+  evs_defense INTEGER DEFAULT 0,
+  evs_sp_attack INTEGER DEFAULT 0,
+  evs_sp_defense INTEGER DEFAULT 0,
+  evs_speed INTEGER DEFAULT 0,
+  ivs_hp INTEGER DEFAULT 31,
+  ivs_attack INTEGER DEFAULT 31,
+  ivs_defense INTEGER DEFAULT 31,
+  ivs_sp_attack INTEGER DEFAULT 31,
+  ivs_sp_defense INTEGER DEFAULT 31,
+  ivs_speed INTEGER DEFAULT 31,
+  move_1 TEXT,
+  move_2 TEXT,
+  move_3 TEXT,
+  move_4 TEXT,
+  held_item TEXT,
+  notes TEXT,
+  FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_comp_builds_pokemon_id ON competitive_builds(pokemon_id);
 `;

@@ -68,7 +68,34 @@ export interface Pokemon {
   evolvesFromId?: number | null;
   evolutionTrigger?: string | null;
   isFavorite?: boolean;
+  shinyOwned?: boolean;
+  isAlpha?: boolean;
+  hasCompetitiveBuild?: boolean;
   isInTeam?: boolean;
+  isCaught?: boolean;
+  isSeen?: boolean;
+}
+
+export type CollectionFilterStatus =
+  | 'caught'
+  | 'uncaught'
+  | 'favorite'
+  | 'shiny_owned'
+  | 'alpha'
+  | 'competitive_build';
+
+export interface TrainerProfile {
+  id: number;
+  name: string;
+  avatarId: string;
+  xp: number;
+  currentStreak: number;
+  totalCorrect: number;
+  totalAnswered: number;
+  lastOpenDate: string | null;
+  createdDate: string | null;
+  level: number;
+  xpProgress: number; // 0 to 500
 }
 
 export interface TeamMember {
@@ -83,6 +110,13 @@ export interface FilterOptions {
   legendaryOnly?: boolean;
   ability?: string;
   searchQuery?: string;
+  collectionFilters?: CollectionFilterStatus[];
+  caughtOnly?: boolean;
+  notCaughtOnly?: boolean;
+  favoritesOnly?: boolean;
+  shinyOwnedOnly?: boolean;
+  alphaOnly?: boolean;
+  hasCompetitiveBuildOnly?: boolean;
 }
 
 export interface PokemonVariant {
@@ -246,4 +280,37 @@ export interface QuizScoreRecord {
   bestStreak: number;
   datePlayed: string;
   isAllTimeBest?: boolean;
+}
+
+export interface EVs {
+  hp: number;
+  attack: number;
+  defense: number;
+  specialAttack: number;
+  specialDefense: number;
+  speed: number;
+}
+
+export interface IVs {
+  hp: number;
+  attack: number;
+  defense: number;
+  specialAttack: number;
+  specialDefense: number;
+  speed: number;
+}
+
+export interface CompetitiveBuild {
+  id?: number;
+  pokemonId: number;
+  buildName: string;
+  nature: string;
+  evs: EVs;
+  ivs: IVs;
+  move1?: string | null;
+  move2?: string | null;
+  move3?: string | null;
+  move4?: string | null;
+  heldItem?: string | null;
+  notes?: string | null;
 }

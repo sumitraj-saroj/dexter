@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { useColorScheme, ViewProps } from 'react-native';
+import { useColorScheme, ViewProps, View } from 'react-native';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -144,12 +144,12 @@ export const useAppTheme = () => {
 };
 
 // Reanimated Animated Background Container Component
-export const AnimatedThemeView: React.FC<ViewProps & { surface?: boolean }> = ({
+export const AnimatedThemeView = React.forwardRef<View, ViewProps & { surface?: boolean }>(({
   style,
   surface = false,
   children,
   ...props
-}) => {
+}, ref) => {
   const { animatedTokens } = useAppTheme();
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -159,10 +159,11 @@ export const AnimatedThemeView: React.FC<ViewProps & { surface?: boolean }> = ({
   });
 
   return (
-    <Animated.View style={[animatedStyle, style]} {...props}>
+    <Animated.View ref={ref} style={[animatedStyle, style]} {...props}>
       {children}
     </Animated.View>
   );
-};
+});
+
 
 export * from './dynamicTheme';

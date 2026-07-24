@@ -1,4 +1,18 @@
-import { FilterOptions, Generation, Pokemon, PokemonAbility, PokemonMove, PokemonSpecialForm, PokemonStat, PokemonVariant, QuizScoreRecord, TeamMember } from '../types';
+import {
+  FilterOptions,
+  Generation,
+  Pokemon,
+  PokemonAbility,
+  PokemonMove,
+  PokemonSpecialForm,
+  PokemonStat,
+  PokemonType,
+  PokemonVariant,
+  QuizScoreRecord,
+  TeamMember,
+  TrainerProfile,
+  CompetitiveBuild,
+} from '../types';
 
 function mapRowToPokemon(row: any): Pokemon {
   return {
@@ -17,7 +31,12 @@ function mapRowToPokemon(row: any): Pokemon {
     officialArtworkUrl: row.official_artwork_url || '',
     shinyArtworkUrl: row.shiny_artwork_url || '',
     isFavorite: Boolean(row.is_favorite),
+    shinyOwned: Boolean(row.shiny_owned),
+    isAlpha: Boolean(row.is_alpha),
+    hasCompetitiveBuild: Boolean(row.has_competitive_build),
     isInTeam: Boolean(row.is_in_team),
+    isCaught: Boolean(row.is_caught),
+    isSeen: Boolean(row.is_seen),
   };
 }
 
@@ -40,12 +59,28 @@ async function runSingleQuery(db: any, sql: string, params: any[] = []): Promise
   return null;
 }
 
+async function runExecuteQuery(db: any, sql: string, params: any[] = []): Promise<void> {
+  if (typeof db.runAsync === 'function') {
+    await db.runAsync(sql, params);
+  } else if (typeof db.prepare === 'function') {
+    db.prepare(sql).run(...params);
+  } else if (typeof db.execAsync === 'function') {
+    await db.execAsync(sql);
+  }
+}
+
 export async function getAllPokemon(db: any): Promise<Pokemon[]> {
   const sql = `
     SELECT p.*,
-      EXISTS(SELECT 1 FROM favorites f WHERE f.pokemon_id = p.id) as is_favorite,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
     FROM pokemon p
+    LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
     ORDER BY p.id ASC;
   `;
   const rows = await runSelectQuery(db, sql);
@@ -55,9 +90,15 @@ export async function getAllPokemon(db: any): Promise<Pokemon[]> {
 export async function getPokemonById(db: any, id: number): Promise<Pokemon | null> {
   const pokemonSql = `
     SELECT p.*,
-      EXISTS(SELECT 1 FROM favorites f WHERE f.pokemon_id = p.id) as is_favorite,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
     FROM pokemon p
+    LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
     WHERE p.id = ?;
   `;
   const row = await runSingleQuery(db, pokemonSql, [id]);
@@ -114,9 +155,15 @@ export async function searchPokemon(db: any, query: string): Promise<Pokemon[]> 
 
   const sql = `
     SELECT p.*,
-      EXISTS(SELECT 1 FROM favorites f WHERE f.pokemon_id = p.id) as is_favorite,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
     FROM pokemon p
+    LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
     WHERE LOWER(p.name) LIKE ?
        OR p.number LIKE ?
        OR CAST(p.id AS TEXT) = ?
@@ -133,13 +180,32 @@ export async function getGenerations(db: any): Promise<Generation[]> {
 }
 
 export async function filterPokemon(db: any, options: FilterOptions): Promise<Pokemon[]> {
-  const { types, generations, legendaryOnly, ability, searchQuery } = options;
+  const {
+    types,
+    generations,
+    legendaryOnly,
+    ability,
+    searchQuery,
+    collectionFilters,
+    caughtOnly,
+    notCaughtOnly,
+    favoritesOnly,
+    shinyOwnedOnly,
+    alphaOnly,
+    hasCompetitiveBuildOnly,
+  } = options;
 
   let sql = `
     SELECT DISTINCT p.*,
-      EXISTS(SELECT 1 FROM favorites f WHERE f.pokemon_id = p.id) as is_favorite,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
     FROM pokemon p
+    LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
   `;
 
   const joins: string[] = [];
@@ -170,7 +236,6 @@ export async function filterPokemon(db: any, options: FilterOptions): Promise<Po
       genRows = [];
     }
 
-    // Fallback generation range map if generations table is empty or unpopulated
     if (!genRows || genRows.length === 0) {
       const FALLBACK_GEN_RANGES: Record<number, { start_id: number; end_id: number }> = {
         1: { start_id: 1, end_id: 151 },
@@ -207,6 +272,33 @@ export async function filterPokemon(db: any, options: FilterOptions): Promise<Po
     params.push(`%${cleanSearch}%`, `%${cleanSearch}%`, cleanSearch);
   }
 
+  // Collection Status Filters
+  const isCaughtFilter = caughtOnly || collectionFilters?.includes('caught');
+  const isUncaughtFilter = notCaughtOnly || collectionFilters?.includes('uncaught');
+  const isFavoriteFilter = favoritesOnly || collectionFilters?.includes('favorite');
+  const isShinyFilter = shinyOwnedOnly || collectionFilters?.includes('shiny_owned');
+  const isAlphaFilter = alphaOnly || collectionFilters?.includes('alpha');
+  const isCompFilter = hasCompetitiveBuildOnly || collectionFilters?.includes('competitive_build');
+
+  if (isCaughtFilter) {
+    whereClauses.push(`EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id)`);
+  }
+  if (isUncaughtFilter) {
+    whereClauses.push(`NOT EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id)`);
+  }
+  if (isFavoriteFilter) {
+    whereClauses.push(`COALESCE(pcs.is_favorite, 0) = 1`);
+  }
+  if (isShinyFilter) {
+    whereClauses.push(`COALESCE(pcs.shiny_owned, 0) = 1`);
+  }
+  if (isAlphaFilter) {
+    whereClauses.push(`COALESCE(pcs.is_alpha, 0) = 1`);
+  }
+  if (isCompFilter) {
+    whereClauses.push(`COALESCE(pcs.has_competitive_build, 0) = 1`);
+  }
+
   if (joins.length > 0) {
     sql += ' ' + joins.join(' ');
   }
@@ -222,34 +314,86 @@ export async function filterPokemon(db: any, options: FilterOptions): Promise<Po
 }
 
 export async function toggleFavorite(db: any, pokemonId: number): Promise<boolean> {
-  const checkSql = `SELECT 1 FROM favorites WHERE pokemon_id = ?;`;
-  const existing = await runSingleQuery(db, checkSql, [pokemonId]);
+  const current = await runSingleQuery(
+    db,
+    `SELECT is_favorite FROM pokemon_collection_status WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+  const nextVal = current && current.is_favorite ? 0 : 1;
 
-  if (existing) {
-    const deleteSql = `DELETE FROM favorites WHERE pokemon_id = ?;`;
-    if (typeof db.runAsync === 'function') {
-      await db.runAsync(deleteSql, [pokemonId]);
-    } else if (typeof db.prepare === 'function') {
-      db.prepare(deleteSql).run(pokemonId);
-    }
-    return false;
-  } else {
-    const insertSql = `INSERT INTO favorites (pokemon_id) VALUES (?);`;
-    if (typeof db.runAsync === 'function') {
-      await db.runAsync(insertSql, [pokemonId]);
-    } else if (typeof db.prepare === 'function') {
-      db.prepare(insertSql).run(pokemonId);
-    }
-    return true;
-  }
+  await runExecuteQuery(
+    db,
+    `INSERT INTO pokemon_collection_status (pokemon_id, is_favorite) VALUES (?, ?)
+     ON CONFLICT(pokemon_id) DO UPDATE SET is_favorite = excluded.is_favorite;`,
+    [pokemonId, nextVal]
+  );
+  return Boolean(nextVal);
+}
+
+export async function toggleShinyOwned(db: any, pokemonId: number): Promise<boolean> {
+  const current = await runSingleQuery(
+    db,
+    `SELECT shiny_owned FROM pokemon_collection_status WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+  const nextVal = current && current.shiny_owned ? 0 : 1;
+
+  await runExecuteQuery(
+    db,
+    `INSERT INTO pokemon_collection_status (pokemon_id, shiny_owned) VALUES (?, ?)
+     ON CONFLICT(pokemon_id) DO UPDATE SET shiny_owned = excluded.shiny_owned;`,
+    [pokemonId, nextVal]
+  );
+  return Boolean(nextVal);
+}
+
+export async function toggleAlpha(db: any, pokemonId: number): Promise<boolean> {
+  const current = await runSingleQuery(
+    db,
+    `SELECT is_alpha FROM pokemon_collection_status WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+  const nextVal = current && current.is_alpha ? 0 : 1;
+
+  await runExecuteQuery(
+    db,
+    `INSERT INTO pokemon_collection_status (pokemon_id, is_alpha) VALUES (?, ?)
+     ON CONFLICT(pokemon_id) DO UPDATE SET is_alpha = excluded.is_alpha;`,
+    [pokemonId, nextVal]
+  );
+  return Boolean(nextVal);
+}
+
+export async function toggleCompetitiveBuild(db: any, pokemonId: number): Promise<boolean> {
+  const current = await runSingleQuery(
+    db,
+    `SELECT has_competitive_build FROM pokemon_collection_status WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+  const nextVal = current && current.has_competitive_build ? 0 : 1;
+
+  await runExecuteQuery(
+    db,
+    `INSERT INTO pokemon_collection_status (pokemon_id, has_competitive_build) VALUES (?, ?)
+     ON CONFLICT(pokemon_id) DO UPDATE SET has_competitive_build = excluded.has_competitive_build;`,
+    [pokemonId, nextVal]
+  );
+  return Boolean(nextVal);
 }
 
 export async function getFavorites(db: any): Promise<Pokemon[]> {
   const sql = `
-    SELECT p.*, 1 as is_favorite,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team
-    FROM favorites f
-    JOIN pokemon p ON p.id = f.pokemon_id
+    SELECT p.*,
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
+    FROM pokemon p
+    JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
+    WHERE pcs.is_favorite = 1
     ORDER BY p.id ASC;
   `;
   const rows = await runSelectQuery(db, sql);
@@ -329,10 +473,16 @@ export async function toggleSquadMember(
 export async function getTeam(db: any): Promise<TeamMember[]> {
   const sql = `
     SELECT t.slot, t.pokemon_id, p.*,
-      EXISTS(SELECT 1 FROM favorites f WHERE f.pokemon_id = p.id) as is_favorite,
-      1 as is_in_team
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      1 as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
     FROM team t
     JOIN pokemon p ON p.id = t.pokemon_id
+    LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
     ORDER BY t.slot ASC;
   `;
   const rows = await runSelectQuery(db, sql);
@@ -451,9 +601,15 @@ export async function setUserSetting(db: any, key: string, value: string): Promi
 export async function getQuizQuestionPokemon(db: any): Promise<{ target: Pokemon; options: Pokemon[] } | null> {
   const sql = `
     SELECT p.*,
-      EXISTS(SELECT 1 FROM favorites f WHERE f.pokemon_id = p.id) as is_favorite,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team
+      COALESCE(pcs.is_favorite, 0) as is_favorite,
+      COALESCE(pcs.shiny_owned, 0) as shiny_owned,
+      COALESCE(pcs.is_alpha, 0) as is_alpha,
+      COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
+      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
+      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
     FROM pokemon p
+    LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
     WHERE p.official_artwork_url IS NOT NULL AND p.official_artwork_url != ''
     ORDER BY RANDOM()
     LIMIT 4;
@@ -668,6 +824,322 @@ export async function getSpecialFormsForPokemon(db: any, basePokemonId: number):
 
   return forms;
 }
+
+export async function getTrainerProfile(db: any): Promise<TrainerProfile> {
+  let row = await runSingleQuery(db, `SELECT * FROM trainer_profile WHERE id = 1;`);
+  if (!row) {
+    const today = new Date().toISOString().split('T')[0];
+    await runExecuteQuery(
+      db,
+      `INSERT OR IGNORE INTO trainer_profile (id, name, avatar_id, xp, current_streak, total_correct, total_answered, last_open_date, created_date) VALUES (1, 'Trainer', 'pikachu', 0, 1, 0, 0, ?, ?);`,
+      [today, today]
+    );
+    row = await runSingleQuery(db, `SELECT * FROM trainer_profile WHERE id = 1;`);
+  }
+  const xp = row?.xp || 0;
+  const level = Math.floor(xp / 500) + 1;
+  const xpProgress = xp % 500;
+
+  return {
+    id: 1,
+    name: row?.name || 'Trainer',
+    avatarId: row?.avatar_id || 'pikachu',
+    xp,
+    currentStreak: row?.current_streak || 0,
+    totalCorrect: row?.total_correct || 0,
+    totalAnswered: row?.total_answered || 0,
+    lastOpenDate: row?.last_open_date || null,
+    createdDate: row?.created_date || null,
+    level,
+    xpProgress,
+  };
+}
+
+export async function updateTrainerProfile(
+  db: any,
+  updates: { name?: string; avatarId?: string }
+): Promise<TrainerProfile> {
+  await getTrainerProfile(db);
+  if (updates.name !== undefined) {
+    await runExecuteQuery(db, `UPDATE trainer_profile SET name = ? WHERE id = 1;`, [updates.name]);
+  }
+  if (updates.avatarId !== undefined) {
+    await runExecuteQuery(db, `UPDATE trainer_profile SET avatar_id = ? WHERE id = 1;`, [updates.avatarId]);
+  }
+  return await getTrainerProfile(db);
+}
+
+export async function checkAndUpdateDailyStreak(
+  db: any
+): Promise<{ streakAwarded: boolean; streak: number }> {
+  const profile = await getTrainerProfile(db);
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  if (!profile.lastOpenDate) {
+    await runExecuteQuery(
+      db,
+      `UPDATE trainer_profile SET current_streak = 1, xp = xp + 10, last_open_date = ?, created_date = ? WHERE id = 1;`,
+      [todayStr, todayStr]
+    );
+    return { streakAwarded: true, streak: 1 };
+  }
+
+  if (profile.lastOpenDate === todayStr) {
+    return { streakAwarded: false, streak: profile.currentStreak };
+  }
+
+  const lastDate = new Date(profile.lastOpenDate + 'T00:00:00');
+  const todayDate = new Date(todayStr + 'T00:00:00');
+  const diffTime = todayDate.getTime() - lastDate.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+
+  if (diffDays === 1) {
+    const nextStreak = profile.currentStreak + 1;
+    await runExecuteQuery(
+      db,
+      `UPDATE trainer_profile SET current_streak = ?, xp = xp + 10, last_open_date = ? WHERE id = 1;`,
+      [nextStreak, todayStr]
+    );
+    return { streakAwarded: true, streak: nextStreak };
+  } else if (diffDays > 1) {
+    await runExecuteQuery(
+      db,
+      `UPDATE trainer_profile SET current_streak = 1, xp = xp + 10, last_open_date = ? WHERE id = 1;`,
+      [todayStr]
+    );
+    return { streakAwarded: true, streak: 1 };
+  }
+
+  return { streakAwarded: false, streak: profile.currentStreak };
+}
+
+export async function recordPokemonSeen(
+  db: any,
+  pokemonId: number
+): Promise<{ newlySeen: boolean }> {
+  const existing = await runSingleQuery(db, `SELECT 1 FROM pokemon_seen WHERE pokemon_id = ?;`, [
+    pokemonId,
+  ]);
+  if (existing) {
+    return { newlySeen: false };
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  await runExecuteQuery(
+    db,
+    `INSERT OR IGNORE INTO pokemon_seen (pokemon_id, first_seen_date) VALUES (?, ?);`,
+    [pokemonId, todayStr]
+  );
+  await runExecuteQuery(db, `UPDATE trainer_profile SET xp = xp + 5 WHERE id = 1;`);
+  return { newlySeen: true };
+}
+
+export async function togglePokemonCaught(
+  db: any,
+  pokemonId: number
+): Promise<{ isCaught: boolean; newlyCaught: boolean }> {
+  const existing = await runSingleQuery(
+    db,
+    `SELECT 1 FROM pokemon_caught WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+
+  if (existing) {
+    await runExecuteQuery(db, `DELETE FROM pokemon_caught WHERE pokemon_id = ?;`, [pokemonId]);
+    return { isCaught: false, newlyCaught: false };
+  } else {
+    await recordPokemonSeen(db, pokemonId);
+    const todayStr = new Date().toISOString().split('T')[0];
+    await runExecuteQuery(
+      db,
+      `INSERT INTO pokemon_caught (pokemon_id, caught_date) VALUES (?, ?);`,
+      [pokemonId, todayStr]
+    );
+    await runExecuteQuery(db, `UPDATE trainer_profile SET xp = xp + 20 WHERE id = 1;`);
+    return { isCaught: true, newlyCaught: true };
+  }
+}
+
+export async function recordQuizAnswer(db: any, isCorrect: boolean): Promise<void> {
+  const xpBonus = isCorrect ? 3 : 0;
+  const correctInc = isCorrect ? 1 : 0;
+  await runExecuteQuery(
+    db,
+    `UPDATE trainer_profile SET total_answered = total_answered + 1, total_correct = total_correct + ?, xp = xp + ? WHERE id = 1;`,
+    [correctInc, xpBonus]
+  );
+}
+
+export async function getPokedexCompletionStats(
+  db: any
+): Promise<{ seenCount: number; caughtCount: number; totalCount: number }> {
+  const totalRow = await runSingleQuery(db, `SELECT COUNT(*) as cnt FROM pokemon;`);
+  const seenRow = await runSingleQuery(db, `SELECT COUNT(*) as cnt FROM pokemon_seen;`);
+  const caughtRow = await runSingleQuery(db, `SELECT COUNT(*) as cnt FROM pokemon_caught;`);
+
+  return {
+    totalCount: totalRow?.cnt || 1025,
+    seenCount: seenRow?.cnt || 0,
+    caughtCount: caughtRow?.cnt || 0,
+  };
+}
+
+export async function getFavoriteType(db: any): Promise<PokemonType | null> {
+  const sql = `
+    SELECT p.primary_type, COUNT(*) as cnt, MAX(c.caught_date) as latest_caught
+    FROM pokemon_caught c
+    JOIN pokemon p ON p.id = c.pokemon_id
+    GROUP BY p.primary_type
+    ORDER BY cnt DESC, latest_caught DESC, p.primary_type ASC
+    LIMIT 1;
+  `;
+  const row = await runSingleQuery(db, sql);
+  return row ? (row.primary_type as PokemonType) : null;
+}
+
+export async function getCompetitiveBuildsForPokemon(
+  db: any,
+  pokemonId: number
+): Promise<CompetitiveBuild[]> {
+  const sql = `SELECT * FROM competitive_builds WHERE pokemon_id = ? ORDER BY id ASC;`;
+  const rows = await runSelectQuery(db, sql, [pokemonId]);
+  return rows.map((r: any) => ({
+    id: r.id,
+    pokemonId: r.pokemon_id,
+    buildName: r.build_name || 'Standard Build',
+    nature: r.nature || 'Adamant',
+    evs: {
+      hp: r.evs_hp || 0,
+      attack: r.evs_attack || 0,
+      defense: r.evs_defense || 0,
+      specialAttack: r.evs_sp_attack || 0,
+      specialDefense: r.evs_sp_defense || 0,
+      speed: r.evs_speed || 0,
+    },
+    ivs: {
+      hp: r.ivs_hp ?? 31,
+      attack: r.ivs_attack ?? 31,
+      defense: r.ivs_defense ?? 31,
+      specialAttack: r.ivs_sp_attack ?? 31,
+      specialDefense: r.ivs_sp_defense ?? 31,
+      speed: r.ivs_speed ?? 31,
+    },
+    move1: r.move_1 || null,
+    move2: r.move_2 || null,
+    move3: r.move_3 || null,
+    move4: r.move_4 || null,
+    heldItem: r.held_item || null,
+    notes: r.notes || null,
+  }));
+}
+
+export async function syncHasCompetitiveBuildFlag(db: any, pokemonId: number): Promise<void> {
+  const countRow = await runSingleQuery(
+    db,
+    `SELECT COUNT(*) as cnt FROM competitive_builds WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+  const hasBuilds = countRow && countRow.cnt > 0 ? 1 : 0;
+
+  await runExecuteQuery(
+    db,
+    `INSERT INTO pokemon_collection_status (pokemon_id, has_competitive_build) VALUES (?, ?)
+     ON CONFLICT(pokemon_id) DO UPDATE SET has_competitive_build = excluded.has_competitive_build;`,
+    [pokemonId, hasBuilds]
+  );
+}
+
+export async function saveCompetitiveBuild(
+  db: any,
+  build: CompetitiveBuild
+): Promise<number> {
+  if (build.id) {
+    const updateSql = `
+      UPDATE competitive_builds SET
+        build_name = ?, nature = ?,
+        evs_hp = ?, evs_attack = ?, evs_defense = ?, evs_sp_attack = ?, evs_sp_defense = ?, evs_speed = ?,
+        ivs_hp = ?, ivs_attack = ?, ivs_defense = ?, ivs_sp_attack = ?, ivs_sp_defense = ?, ivs_speed = ?,
+        move_1 = ?, move_2 = ?, move_3 = ?, move_4 = ?,
+        held_item = ?, notes = ?
+      WHERE id = ? AND pokemon_id = ?;
+    `;
+    await runExecuteQuery(db, updateSql, [
+      build.buildName,
+      build.nature,
+      build.evs.hp,
+      build.evs.attack,
+      build.evs.defense,
+      build.evs.specialAttack,
+      build.evs.specialDefense,
+      build.evs.speed,
+      build.ivs.hp,
+      build.ivs.attack,
+      build.ivs.defense,
+      build.ivs.specialAttack,
+      build.ivs.specialDefense,
+      build.ivs.speed,
+      build.move1 || null,
+      build.move2 || null,
+      build.move3 || null,
+      build.move4 || null,
+      build.heldItem || null,
+      build.notes || null,
+      build.id,
+      build.pokemonId,
+    ]);
+    await syncHasCompetitiveBuildFlag(db, build.pokemonId);
+    return build.id;
+  } else {
+    const insertSql = `
+      INSERT INTO competitive_builds (
+        pokemon_id, build_name, nature,
+        evs_hp, evs_attack, evs_defense, evs_sp_attack, evs_sp_defense, evs_speed,
+        ivs_hp, ivs_attack, ivs_defense, ivs_sp_attack, ivs_sp_defense, ivs_speed,
+        move_1, move_2, move_3, move_4, held_item, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `;
+    await runExecuteQuery(db, insertSql, [
+      build.pokemonId,
+      build.buildName,
+      build.nature,
+      build.evs.hp,
+      build.evs.attack,
+      build.evs.defense,
+      build.evs.specialAttack,
+      build.evs.specialDefense,
+      build.evs.speed,
+      build.ivs.hp,
+      build.ivs.attack,
+      build.ivs.defense,
+      build.ivs.specialAttack,
+      build.ivs.specialDefense,
+      build.ivs.speed,
+      build.move1 || null,
+      build.move2 || null,
+      build.move3 || null,
+      build.move4 || null,
+      build.heldItem || null,
+      build.notes || null,
+    ]);
+    await syncHasCompetitiveBuildFlag(db, build.pokemonId);
+    const lastRow = await runSingleQuery(
+      db,
+      `SELECT MAX(id) as maxId FROM competitive_builds WHERE pokemon_id = ?;`,
+      [build.pokemonId]
+    );
+    return lastRow?.maxId || 0;
+  }
+}
+
+export async function deleteCompetitiveBuild(
+  db: any,
+  buildId: number,
+  pokemonId: number
+): Promise<void> {
+  await runExecuteQuery(db, `DELETE FROM competitive_builds WHERE id = ?;`, [buildId]);
+  await syncHasCompetitiveBuildFlag(db, pokemonId);
+}
+
 
 
 
