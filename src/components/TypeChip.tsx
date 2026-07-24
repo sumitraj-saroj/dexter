@@ -14,7 +14,7 @@ interface TypeChipProps {
 // Types with high luminance where dark text provides optimal WCAG 4.5:1 contrast
 const LIGHT_BACKGROUND_TYPES: Set<PokemonType> = new Set(['electric', 'ice', 'fairy']);
 
-export const TypeChip: React.FC<TypeChipProps> = ({
+const TypeChipComponent: React.FC<TypeChipProps> = ({
   type,
   selected = true,
   onPress,
@@ -69,6 +69,8 @@ export const TypeChip: React.FC<TypeChipProps> = ({
 
   return <View style={containerStyle}>{content}</View>;
 };
+
+export const TypeChip = React.memo(TypeChipComponent);
 
 const styles = StyleSheet.create({
   smallChip: {

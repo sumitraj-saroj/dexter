@@ -1,5 +1,11 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { StyleSheet, Text, View, StatusBar, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -8,7 +14,7 @@ import { Image } from 'expo-image';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAppTheme } from '../../src/theme';
 import { isDatabaseSynced, syncKantoPokemon } from '../../src/db';
-import { SyncLoadingScreen, PokemonCard, SearchBar, FilterBottomSheet, PokemonOfTheDayCard } from '../../src/components';
+import { SyncLoadingScreen, PokemonCard, SearchBar, FilterBottomSheet, PokemonOfTheDayCard, PokemonGridSkeleton } from '../../src/components';
 import { useAppDb } from '../_layout';
 import { useDebounce } from '../../src/hooks/useDebounce';
 import { usePokemonQuery } from '../../src/hooks/usePokemonQuery';
@@ -16,13 +22,30 @@ import { usePokemonOfTheDay } from '../../src/hooks/usePokemonOfTheDay';
 import { useTrainerProfile } from '../../src/hooks/useTrainerProfile';
 import { getAvatarById } from '../../src/utils/avatars';
 
-import { FilterOptions, Pokemon } from '../../src/types';
+import { FilterOptions, Pokemon, CollectionFilterStatus } from '../../src/types';
 import { hapticLight, hapticSuccess } from '../../src/utils/haptics';
+
+const keyExtractor = (item: Pokemon) => item.id.toString();
+const getItemType = (item: Pokemon) => item.primaryType;
 
 export default function HomeScreen() {
   const db = useAppDb();
   const router = useRouter();
   const { colorScheme, isDark, resetToNeutralTheme } = useAppTheme();
+
+  // Filter chips entry animation (slides from left)
+  const filterChipsOpacity = useSharedValue(0);
+  const filterChipsTranslateX = useSharedValue(-24);
+
+  useEffect(() => {
+    filterChipsOpacity.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.quad) });
+    filterChipsTranslateX.value = withTiming(0, { duration: 400, easing: Easing.out(Easing.quad) });
+  }, []);
+
+  const filterChipsAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: filterChipsOpacity.value,
+    transform: [{ translateX: filterChipsTranslateX.value }],
+  }));
 
   // Always enforce neutral theme on home screen
   useFocusEffect(
@@ -140,6 +163,14 @@ export default function HomeScreen() {
     if (filters.generations && filters.generations.length > 0) count += filters.generations.length;
     if (filters.legendaryOnly) count += 1;
     if (filters.ability && filters.ability.trim().length > 0) count += 1;
+    if (filters.collectionFilters && filters.collectionFilters.length > 0) count += filters.collectionFilters.length;
+    if (filters.ashOwnedOnly) count += 1;
+    if (filters.caughtOnly) count += 1;
+    if (filters.notCaughtOnly) count += 1;
+    if (filters.favoritesOnly) count += 1;
+    if (filters.shinyOwnedOnly) count += 1;
+    if (filters.alphaOnly) count += 1;
+    if (filters.hasCompetitiveBuildOnly) count += 1;
     return count;
   }, [filters]);
 
@@ -153,6 +184,8 @@ export default function HomeScreen() {
       generations: [],
       legendaryOnly: false,
       ability: '',
+      collectionFilters: [],
+      ashOwnedOnly: false,
     });
   }, []);
 
@@ -298,12 +331,11 @@ export default function HomeScreen() {
         activeFilterCount={activeFilterCount}
       />
 
+
       {/* Main Grid Content */}
       <View style={styles.listContainer}>
         {isLoading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={colorScheme.primary} />
-          </View>
+          <PokemonGridSkeleton />
         ) : isError ? (
           <View style={styles.centered}>
             <Text style={[styles.emptyText, { color: colorScheme.onBackground }]}>
@@ -330,8 +362,9 @@ export default function HomeScreen() {
           <FlashList
             data={pokemonList}
             renderItem={renderItem}
-            keyExtractor={(item) => item.id.toString()}
-            getItemType={(item) => item.primaryType}
+            keyExtractor={keyExtractor}
+            getItemType={getItemType}
+            estimatedItemSize={182}
             numColumns={2}
             ListHeaderComponent={renderListHeader}
             contentContainerStyle={styles.listContent}
@@ -464,6 +497,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 6,
+  },
+  quickFilterBar: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  quickFilterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  quickFilterText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   activeFilterLabel: {
     fontSize: 12,

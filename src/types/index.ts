@@ -62,6 +62,9 @@ export interface Pokemon {
   shinySpriteUrl: string;
   officialArtworkUrl: string;
   shinyArtworkUrl: string;
+  eggGroups?: string[];
+  hatchCounter?: number | null;
+  genderRate?: number | null;
   stats?: PokemonStat;
   abilities?: PokemonAbility[];
   moves?: PokemonMove[];
@@ -71,9 +74,24 @@ export interface Pokemon {
   shinyOwned?: boolean;
   isAlpha?: boolean;
   hasCompetitiveBuild?: boolean;
+  ashOwned?: boolean;
   isInTeam?: boolean;
   isCaught?: boolean;
   isSeen?: boolean;
+}
+
+export interface BreedingInfo {
+  canBreed: boolean;
+  reason?: string;
+  eggGroups: string[];
+  hatchCounter: number | null;
+  hatchSteps: number | null;
+  genderRate: number | null;
+  isGenderless: boolean;
+  malePercentage: number | null;
+  femalePercentage: number | null;
+  eggMoves: PokemonMove[];
+  compatiblePokemon: Pokemon[];
 }
 
 export type CollectionFilterStatus =
@@ -82,7 +100,8 @@ export type CollectionFilterStatus =
   | 'favorite'
   | 'shiny_owned'
   | 'alpha'
-  | 'competitive_build';
+  | 'competitive_build'
+  | 'ash_owned';
 
 export interface TrainerProfile {
   id: number;
@@ -117,6 +136,7 @@ export interface FilterOptions {
   shinyOwnedOnly?: boolean;
   alphaOnly?: boolean;
   hasCompetitiveBuildOnly?: boolean;
+  ashOwnedOnly?: boolean;
 }
 
 export interface PokemonVariant {
@@ -198,6 +218,9 @@ export interface FullPokemonData {
     shiny_sprite_url: string;
     official_artwork_url: string;
     shiny_artwork_url: string;
+    egg_groups?: string[];
+    hatch_counter?: number | null;
+    gender_rate?: number | null;
   };
   stats: {
     hp: number;

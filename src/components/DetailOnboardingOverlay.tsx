@@ -19,7 +19,7 @@ export interface TargetLayout {
   height: number;
 }
 
-export type StepKey = 'fav' | 'caught' | 'shiny' | 'alpha' | 'build' | 'specialForm';
+export type StepKey = 'fav' | 'caught' | 'shiny' | 'alpha' | 'ash' | 'build' | 'specialForm';
 
 export interface TourStep {
   key: StepKey;
@@ -57,6 +57,13 @@ const ALL_STEPS: TourStep[] = [
     title: 'Alpha',
     line1: 'Alpha — mark powerful Alpha-sized',
     line2: 'Pokemon (Legends: Arceus style)',
+  },
+  {
+    key: 'ash',
+    iconName: 'school',
+    title: 'Ash Owned',
+    line1: 'Ash Owned — mark Pokemon that',
+    line2: 'Ash has owned in the anime',
   },
   {
     key: 'build',
@@ -246,6 +253,7 @@ const TOOLTIP_TEXTS: Record<StepKey, string> = {
   caught: "Caught — mark Pokemon you've actually caught in-game",
   shiny: 'Shiny — toggle shiny preview, tap again to mark one you own',
   alpha: 'Alpha — mark powerful Alpha-sized Pokemon (Legends: Arceus style)',
+  ash: 'Ash Owned — mark Pokemon that Ash Ketchum owned in the anime',
   build: 'Competitive Build — save a real competitive moveset with EVs, IVs, and nature',
   specialForm: 'Special Forms — tap to switch Mega or Gigantamax forms',
 };

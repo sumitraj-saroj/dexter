@@ -311,8 +311,8 @@ export async function syncNationalPokemon(
         const { pokemon, stats, abilities, moves, evolution, variants, specialForms, sprites } = item;
 
         await db.runAsync(
-          `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url, egg_groups, hatch_counter, gender_rate)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             pokemon.id,
             pokemon.name,
@@ -328,6 +328,9 @@ export async function syncNationalPokemon(
             pokemon.shiny_sprite_url,
             pokemon.official_artwork_url,
             pokemon.shiny_artwork_url,
+            pokemon.egg_groups ? pokemon.egg_groups.join(', ') : null,
+            pokemon.hatch_counter ?? null,
+            pokemon.gender_rate ?? null,
           ]
         );
 
@@ -409,8 +412,8 @@ export async function syncNationalPokemon(
     );
 
     const insertPokemon = db.prepare(
-      `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url, egg_groups, hatch_counter, gender_rate)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const insertStats = db.prepare(
       `INSERT INTO pokemon_stats (pokemon_id, hp, attack, defense, sp_attack, sp_defense, speed)
@@ -451,7 +454,10 @@ export async function syncNationalPokemon(
             pokemon.sprite_url,
             pokemon.shiny_sprite_url,
             pokemon.official_artwork_url,
-            pokemon.shiny_artwork_url
+            pokemon.shiny_artwork_url,
+            pokemon.egg_groups ? pokemon.egg_groups.join(', ') : null,
+            pokemon.hatch_counter ?? null,
+            pokemon.gender_rate ?? null
           );
           if (sprites) {
             insertSprites(db, pokemon.id, sprites);

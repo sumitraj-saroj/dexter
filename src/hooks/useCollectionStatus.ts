@@ -5,6 +5,7 @@ import {
   toggleShinyOwned,
   toggleAlpha,
   toggleCompetitiveBuild,
+  toggleAshOwned,
 } from '../db/queries';
 
 import { useAchievement } from '../context/AchievementContext';
@@ -53,10 +54,19 @@ export function useCollectionStatus(db: SQLiteDatabase | null) {
     onSuccess: invalidateAll,
   });
 
+  const toggleAshOwnedMutation = useMutation({
+    mutationFn: async (pokemonId: number) => {
+      if (!db) throw new Error('Database not initialized');
+      return await toggleAshOwned(db, pokemonId);
+    },
+    onSuccess: invalidateAll,
+  });
+
   return {
     toggleFavorite: toggleFavoriteMutation.mutateAsync,
     toggleShinyOwned: toggleShinyOwnedMutation.mutateAsync,
     toggleAlpha: toggleAlphaMutation.mutateAsync,
     toggleCompetitiveBuild: toggleCompetitiveBuildMutation.mutateAsync,
+    toggleAshOwned: toggleAshOwnedMutation.mutateAsync,
   };
 }

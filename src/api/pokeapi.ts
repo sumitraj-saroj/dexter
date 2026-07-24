@@ -175,6 +175,37 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
     }
   }
 
+  // Extract Egg Groups, Hatch Counter, Gender Rate
+  const eggGroupMap: Record<string, string> = {
+    monster: 'Monster',
+    water1: 'Water 1',
+    water2: 'Water 2',
+    water3: 'Water 3',
+    bug: 'Bug',
+    flying: 'Flying',
+    ground: 'Field',
+    fairy: 'Fairy',
+    plant: 'Grass',
+    dragon: 'Dragon',
+    'no-eggs': 'Undiscovered',
+    indeterminate: 'Amorphous',
+    humanshape: 'Human-Like',
+    mineral: 'Mineral',
+    ditto: 'Ditto',
+  };
+
+  const rawEggGroups: Array<{ name: string }> = sData.egg_groups || [];
+  const egg_groups = rawEggGroups.map((g) => {
+    const rawName = g.name?.toLowerCase() || '';
+    if (eggGroupMap[rawName]) return eggGroupMap[rawName];
+    return rawName
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  });
+  const hatch_counter: number | null = typeof sData.hatch_counter === 'number' ? sData.hatch_counter : null;
+  const gender_rate: number | null = typeof sData.gender_rate === 'number' ? sData.gender_rate : null;
+
   // Extract Abilities with effect text
   const abilities = await Promise.all(
     (pData.abilities || []).map(async (a: any) => {
@@ -188,32 +219,49 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
     })
   );
 
-  // Extract Level-Up Moves
-  const levelUpMoves: Array<{ move_name: string; level_learned: number; learn_method: string }> = [];
-  const moveMap = new Map<string, number>();
+  // Extract Level-Up Moves & Egg Moves
+  const allMoves: Array<{ move_name: string; level_learned: number; learn_method: string }> = [];
+  const levelUpMap = new Map<string, number>();
+  const eggMoveSet = new Set<string>();
 
   for (const item of pData.moves || []) {
     for (const detail of item.version_group_details || []) {
-      if (detail.move_learn_method?.name === 'level-up') {
+      const method = detail.move_learn_method?.name;
+      if (method === 'level-up') {
         const moveName = item.move.name;
         const level = detail.level_learned_at || 0;
-        const existing = moveMap.get(moveName);
+        const existing = levelUpMap.get(moveName);
         if (existing === undefined || level < existing) {
-          moveMap.set(moveName, level);
+          levelUpMap.set(moveName, level);
         }
+      } else if (method === 'egg') {
+        eggMoveSet.add(item.move.name);
       }
     }
   }
 
-  moveMap.forEach((level, name) => {
-    levelUpMoves.push({
+  levelUpMap.forEach((level, name) => {
+    allMoves.push({
       move_name: name,
       level_learned: level,
       learn_method: 'level-up',
     });
   });
 
-  levelUpMoves.sort((a, b) => a.level_learned - b.level_learned);
+  eggMoveSet.forEach((name) => {
+    allMoves.push({
+      move_name: name,
+      level_learned: 0,
+      learn_method: 'egg',
+    });
+  });
+
+  allMoves.sort((a, b) => {
+    if (a.learn_method !== b.learn_method) {
+      return a.learn_method === 'level-up' ? -1 : 1;
+    }
+    return a.level_learned - b.level_learned;
+  });
 
   // Sprites
   const sprite_url =
@@ -276,10 +324,13 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
       shiny_sprite_url,
       official_artwork_url,
       shiny_artwork_url,
+      egg_groups,
+      hatch_counter,
+      gender_rate,
     },
     stats,
     abilities,
-    moves: levelUpMoves,
+    moves: allMoves,
     evolution: {
       evolves_from_id,
       evolution_trigger: null,

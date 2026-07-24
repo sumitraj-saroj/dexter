@@ -37,8 +37,10 @@ export default function RootLayout() {
       try {
         const database = await openDatabaseAsync('pokedex.db');
         await migrateDbIfNeeded(database);
-        await checkAndUpdateDailyStreak(database);
-        await checkAchievements(database);
+        await Promise.all([
+          checkAndUpdateDailyStreak(database),
+          checkAchievements(database),
+        ]);
         if (isMounted) setDb(database);
       } catch (e) {
         console.error('Failed to initialize database', e);

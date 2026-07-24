@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS pokemon (
   sprite_url TEXT,
   shiny_sprite_url TEXT,
   official_artwork_url TEXT,
-  shiny_artwork_url TEXT
+  shiny_artwork_url TEXT,
+  egg_groups TEXT,
+  hatch_counter INTEGER,
+  gender_rate INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS pokemon_stats (
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS pokemon_collection_status (
   shiny_owned INTEGER DEFAULT 0,
   is_alpha INTEGER DEFAULT 0,
   has_competitive_build INTEGER DEFAULT 0,
+  ash_owned INTEGER DEFAULT 0,
   FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
 );
 
@@ -74,6 +78,11 @@ CREATE INDEX IF NOT EXISTS idx_pokemon_secondary_type ON pokemon(secondary_type)
 CREATE INDEX IF NOT EXISTS idx_pokemon_legendary ON pokemon(is_legendary);
 CREATE INDEX IF NOT EXISTS idx_pokemon_mythical ON pokemon(is_mythical);
 CREATE INDEX IF NOT EXISTS idx_pokemon_abilities_name ON pokemon_abilities(ability_name);
+CREATE INDEX IF NOT EXISTS idx_pokemon_abilities_pokemon_id ON pokemon_abilities(pokemon_id);
+CREATE INDEX IF NOT EXISTS idx_pokemon_moves_pokemon_id ON pokemon_moves(pokemon_id);
+CREATE INDEX IF NOT EXISTS idx_pcs_fav ON pokemon_collection_status(is_favorite);
+CREATE INDEX IF NOT EXISTS idx_pcs_ash ON pokemon_collection_status(ash_owned);
+CREATE INDEX IF NOT EXISTS idx_pcs_shiny ON pokemon_collection_status(shiny_owned);
 
 CREATE TABLE IF NOT EXISTS generations (
   id INTEGER PRIMARY KEY,

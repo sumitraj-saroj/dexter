@@ -158,6 +158,8 @@ const TYPE_CHART: Record<PokemonType, Partial<Record<PokemonType, number>>> = {
   },
 };
 
+const MULTIPLIER_CACHE = new Map<string, number>();
+
 export function getTypeMultiplier(attacker: PokemonType, defender: PokemonType): number {
   const map = TYPE_CHART[attacker];
   if (!map) return 1.0;
@@ -169,10 +171,15 @@ export function getDualTypeDefenderMultiplier(
   primaryDefender: PokemonType,
   secondaryDefender?: PokemonType | null
 ): number {
+  const cacheKey = `${attacker}:${primaryDefender}:${secondaryDefender || ''}`;
+  const cached = MULTIPLIER_CACHE.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   let mult = getTypeMultiplier(attacker, primaryDefender);
   if (secondaryDefender) {
     mult *= getTypeMultiplier(attacker, secondaryDefender);
   }
+  MULTIPLIER_CACHE.set(cacheKey, mult);
   return mult;
 }
 

@@ -57,8 +57,8 @@ async function runTests() {
   }
 
   const insertPokemon = db.prepare(
-    `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url, egg_groups, hatch_counter, gender_rate)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertEvo = db.prepare(
     `INSERT INTO evolution_chain (pokemon_id, evolves_from_id, evolution_trigger) VALUES (?, ?, ?)`
@@ -80,7 +80,10 @@ async function runTests() {
       pData.pokemon.sprite_url,
       pData.pokemon.shiny_sprite_url,
       pData.pokemon.official_artwork_url,
-      pData.pokemon.shiny_artwork_url
+      pData.pokemon.shiny_artwork_url,
+      pData.pokemon.egg_groups ? pData.pokemon.egg_groups.join(', ') : null,
+      pData.pokemon.hatch_counter ?? null,
+      pData.pokemon.gender_rate ?? null
     );
     if (pData.evolution.evolves_from_id) {
       insertEvo.run(pData.pokemon.id, pData.evolution.evolves_from_id, pData.evolution.evolution_trigger);

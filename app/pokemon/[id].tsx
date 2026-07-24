@@ -15,11 +15,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme, AnimatedThemeView } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getSpritesForPokemon, getUserSetting, setUserSetting } from '../../src/db/queries';
+import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getSpritesForPokemon, getUserSetting, setUserSetting, getBreedingInfo } from '../../src/db/queries';
 import { insertSpecialForm, insertVariant, insertSprites } from '../../src/db/sync';
 import { fetchSpecialFormsForSpecies, fetchRegionalVariantsForSpecies, fetchSinglePokemon } from '../../src/api/pokeapi';
-import { Pokemon, PokemonVariant, PokemonSpecialForm, PokemonSprites } from '../../src/types';
-import { TypeChip, StatBar, PokemonCryButton, DetailOnboardingOverlay, StatusTooltipOverlay, StepKey, TargetLayout, SpriteGallery, GalleryItem } from '../../src/components';
+import { Pokemon, PokemonVariant, PokemonSpecialForm, PokemonSprites, BreedingInfo } from '../../src/types';
+import { TypeChip, StatBar, PokemonCryButton, DetailOnboardingOverlay, StatusTooltipOverlay, StepKey, TargetLayout, SpriteGallery, GalleryItem, BreedingCard } from '../../src/components';
 import { useToggleSquadMutation } from '../../src/hooks/useTeamQuery';
 import { useTrainerProfile } from '../../src/hooks/useTrainerProfile';
 import { useCollectionStatus } from '../../src/hooks/useCollectionStatus';
@@ -59,6 +59,7 @@ export default function PokemonDetailScreen() {
   const [evolutionChain, setEvolutionChain] = useState<
     Array<{ id: number; name: string; number: string; spriteUrl: string; trigger?: string | null }>
   >([]);
+  const [breedingInfo, setBreedingInfo] = useState<BreedingInfo | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Shiny Toggle State
@@ -75,12 +76,14 @@ export default function PokemonDetailScreen() {
     toggleShinyOwned: toggleShinyOwnedMut,
     toggleAlpha: toggleAlphaMut,
     toggleCompetitiveBuild: toggleCompetitiveBuildMut,
+    toggleAshOwned: toggleAshOwnedMut,
   } = useCollectionStatus(db);
 
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const [shinyOwned, setShinyOwned] = useState<boolean>(false);
   const [isAlpha, setIsAlpha] = useState<boolean>(false);
   const [hasCompetitiveBuild, setHasCompetitiveBuild] = useState<boolean>(false);
+  const [ashOwned, setAshOwned] = useState<boolean>(false);
 
   const { recordSeen, toggleCaught } = useTrainerProfile(db);
   const [isCaught, setIsCaught] = useState<boolean>(false);
@@ -98,6 +101,7 @@ export default function PokemonDetailScreen() {
   const caughtRef = React.useRef<View>(null);
   const shinyRef = React.useRef<View>(null);
   const alphaRef = React.useRef<View>(null);
+  const ashRef = React.useRef<View>(null);
   const buildRef = React.useRef<View>(null);
   const specialFormRef = React.useRef<View>(null);
 
@@ -107,6 +111,7 @@ export default function PokemonDetailScreen() {
       caught: caughtRef,
       shiny: shinyRef,
       alpha: alphaRef,
+      ash: ashRef,
       build: buildRef,
       specialForm: specialFormRef,
     };
@@ -134,11 +139,12 @@ export default function PokemonDetailScreen() {
       caught: caughtRef,
       shiny: shinyRef,
       alpha: alphaRef,
+      ash: ashRef,
       build: buildRef,
       specialForm: specialFormRef,
     };
 
-    const keys: StepKey[] = ['fav', 'caught', 'shiny', 'alpha', 'build', 'specialForm'];
+    const keys: StepKey[] = ['fav', 'caught', 'shiny', 'alpha', 'ash', 'build', 'specialForm'];
     keys.forEach((key) => {
       const targetRef = refMap[key];
       if (targetRef?.current && rootRef.current) {
@@ -164,13 +170,13 @@ export default function PokemonDetailScreen() {
   }, [db]);
 
   const handleNextTourStep = useCallback(() => {
-    const maxSteps = specialForms.length > 0 ? 6 : 5;
+    const maxSteps = specialForms.length > 0 ? 7 : 6;
     if (tourStepIndex < maxSteps - 1) {
       const nextIndex = tourStepIndex + 1;
       setTourStepIndex(nextIndex);
       const stepKeys: StepKey[] = specialForms.length > 0
-        ? ['fav', 'caught', 'shiny', 'alpha', 'build', 'specialForm']
-        : ['fav', 'caught', 'shiny', 'alpha', 'build'];
+        ? ['fav', 'caught', 'shiny', 'alpha', 'ash', 'build', 'specialForm']
+        : ['fav', 'caught', 'shiny', 'alpha', 'ash', 'build'];
       if (stepKeys[nextIndex]) {
         setTimeout(() => measureTarget(stepKeys[nextIndex]), 50);
       }
@@ -211,12 +217,13 @@ export default function PokemonDetailScreen() {
       setLoading(true);
       try {
         const numId = parseInt(id, 10);
-        let [pData, evoData, vData, sfData, sData, defaultShinyVal, hasSeenOnboardingVal] = await Promise.all([
+        let [pData, evoData, vData, sfData, sData, bData, defaultShinyVal, hasSeenOnboardingVal] = await Promise.all([
           getPokemonById(db, numId),
           getEvolutionChainForPokemon(db, numId),
           getVariantsForPokemon(db, numId),
           getSpecialFormsForPokemon(db, numId),
           getSpritesForPokemon(db, numId),
+          getBreedingInfo(db, numId),
           getUserSetting(db, 'shiny_by_default', 'false'),
           getUserSetting(db, 'has_seen_detail_onboarding', 'false'),
         ]);
@@ -225,12 +232,14 @@ export default function PokemonDetailScreen() {
           const shouldDefaultShiny = defaultShinyVal === 'true';
           setPokemon(pData);
           setSprites(sData);
+          setBreedingInfo(bData);
           setInTeam(Boolean(pData.isInTeam));
           setIsCaught(Boolean(pData.isCaught));
           setIsFavorite(Boolean(pData.isFavorite));
           setShinyOwned(Boolean(pData.shinyOwned));
           setIsAlpha(Boolean(pData.isAlpha));
           setHasCompetitiveBuild(Boolean(pData.hasCompetitiveBuild));
+          setAshOwned(Boolean(pData.ashOwned));
           recordSeen(pData.id);
           setEvolutionChain(evoData);
           setVariants(vData);
@@ -263,13 +272,21 @@ export default function PokemonDetailScreen() {
               .catch(() => {});
           }
 
-          // Fetch family variants map for dynamic evolution chain mapping
+          // Fetch family variants map for dynamic evolution chain mapping concurrently
           const fMap: Record<number, PokemonVariant[]> = { [numId]: vData };
-          for (const node of evoData) {
-            if (node.id !== numId) {
-              const nVars = await getVariantsForPokemon(db, node.id);
-              if (nVars.length > 0) fMap[node.id] = nVars;
-            }
+          const otherEvoNodes = evoData.filter((node) => node.id !== numId);
+          if (otherEvoNodes.length > 0) {
+            const nodeVariantResults = await Promise.all(
+              otherEvoNodes.map(async (node) => ({
+                id: node.id,
+                variants: await getVariantsForPokemon(db, node.id),
+              }))
+            );
+            nodeVariantResults.forEach(({ id: nodeId, variants: nVars }) => {
+              if (nVars && nVars.length > 0) {
+                fMap[nodeId] = nVars;
+              }
+            });
           }
           setFamilyVariantsMap(fMap);
 
@@ -903,6 +920,35 @@ export default function PokemonDetailScreen() {
                   </TouchableOpacity>
                 ) : null}
 
+                {/* Ash Owned Toggle */}
+                <TouchableOpacity
+                  ref={ashRef}
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => handleLongPressIcon('ash', ashRef)}
+                  onPress={async () => {
+                    if (!pokemon) return;
+                    hapticMedium();
+                    const res = await toggleAshOwnedMut(pokemon.id);
+                    setAshOwned(res);
+                  }}
+                  style={styles.statusRowButton}
+                >
+                  <Ionicons
+                    name={ashOwned ? 'school' : 'school-outline'}
+                    size={16}
+                    color={ashOwned ? colorScheme.primary : colorScheme.onSurfaceVariant}
+                  />
+                  <Text
+                    style={[
+                      styles.statusRowText,
+                      { color: ashOwned ? colorScheme.primary : colorScheme.onSurfaceVariant },
+                    ]}
+                  >
+                    Ash
+                  </Text>
+                </TouchableOpacity>
+
                 {/* Competitive Build Button */}
                 <TouchableOpacity
                   ref={buildRef}
@@ -1242,6 +1288,15 @@ export default function PokemonDetailScreen() {
             </View>
           ) : null}
 
+          {/* Breeding Information Card */}
+          {breedingInfo ? (
+            <BreedingCard
+              breedingInfo={breedingInfo}
+              colorScheme={colorScheme}
+              onSelectPokemon={(pId) => router.push(`/pokemon/${pId}`)}
+            />
+          ) : null}
+
           {/* Section 2: Evolution Chain */}
           {displayEvolutionChain.length > 0 ? (
             <View
@@ -1430,7 +1485,7 @@ export default function PokemonDetailScreen() {
                       ]}
                     >
                       <Text style={[styles.moveLevelText, { color: colorScheme.onSecondaryContainer }]}>
-                        {mv.levelLearned ? `Lvl ${mv.levelLearned}` : mv.learnMethod}
+                        {mv.learnMethod === 'egg' ? 'Egg Move' : mv.levelLearned ? `Lvl ${mv.levelLearned}` : mv.learnMethod}
                       </Text>
                     </View>
                   </View>
@@ -1596,21 +1651,25 @@ const styles = StyleSheet.create({
   },
   statusRowContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     width: '100%',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 12,
     borderWidth: 1,
     marginTop: 4,
+    rowGap: 10,
   },
   statusRowButton: {
+    width: '31%',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
   },
   statusRowText: {
     fontSize: 11,

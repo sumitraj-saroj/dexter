@@ -4,6 +4,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withRepeat,
+  withSequence,
+  cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
@@ -68,6 +71,27 @@ function PokemonOfTheDayCardComponent({
   onShuffle,
 }: PokemonOfTheDayCardProps) {
   const pressScale = useSharedValue(1);
+  const entryOpacity = useSharedValue(0);
+  const entryScale = useSharedValue(0.95);
+  const floatY = useSharedValue(0);
+
+  React.useEffect(() => {
+    entryOpacity.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.quad) });
+    entryScale.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.quad) });
+
+    floatY.value = withRepeat(
+      withSequence(
+        withTiming(-5, { duration: 1250, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 1250, easing: Easing.inOut(Easing.quad) })
+      ),
+      -1,
+      true
+    );
+
+    return () => {
+      cancelAnimation(floatY);
+    };
+  }, []);
 
   const formattedName =
     pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
@@ -94,7 +118,12 @@ function PokemonOfTheDayCardComponent({
   };
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pressScale.value }],
+    opacity: entryOpacity.value,
+    transform: [{ scale: entryScale.value * pressScale.value }],
+  }));
+
+  const artworkFloatStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: floatY.value }],
   }));
 
   // Clean up raw flavor text whitespace/newlines
@@ -172,7 +201,7 @@ function PokemonOfTheDayCardComponent({
             <AnimatedImage
               sharedTransitionTag={`pokemon-image-${pokemon.id}`}
               source={{ uri: pokemon.officialArtworkUrl || pokemon.spriteUrl }}
-              style={styles.artwork}
+              style={[styles.artwork, artworkFloatStyle]}
               contentFit="contain"
               transition={200}
               placeholder={require('../../assets/icon.png')}

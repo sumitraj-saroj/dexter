@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -66,7 +66,7 @@ const ALL_GENERATIONS = [
   { id: 9, name: 'Gen 9', region: 'Paldea' },
 ];
 
-export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
+const FilterBottomSheetComponent: React.FC<FilterBottomSheetProps> = ({
   visible,
   onClose,
   filters,
@@ -82,6 +82,9 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
   const [selectedCollectionFilters, setSelectedCollectionFilters] = useState<CollectionFilterStatus[]>(
     filters.collectionFilters || []
   );
+  const [isAshOwnedSelected, setIsAshOwnedSelected] = useState<boolean>(
+    Boolean(filters.ashOwnedOnly || filters.collectionFilters?.includes('ash_owned'))
+  );
 
   // Sync state when sheet becomes visible
   useEffect(() => {
@@ -90,68 +93,90 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
       setSelectedGenerations(filters.generations || []);
       setLegendaryOnly(filters.legendaryOnly || false);
       setAbility(filters.ability || '');
-      setSelectedCollectionFilters(filters.collectionFilters || []);
+      setSelectedCollectionFilters(filters.collectionFilters?.filter((f) => f !== 'ash_owned') || []);
+      setIsAshOwnedSelected(Boolean(filters.ashOwnedOnly || filters.collectionFilters?.includes('ash_owned')));
     }
   }, [visible, filters]);
 
-  const toggleType = (type: PokemonType) => {
+  const toggleType = useCallback((type: PokemonType) => {
     hapticSelection();
-    if (selectedTypes.includes(type)) {
-      setSelectedTypes(selectedTypes.filter((t) => t !== type));
-    } else {
-      setSelectedTypes([...selectedTypes, type]);
-    }
-  };
+    setSelectedTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  }, []);
 
-  const toggleGeneration = (genId: number) => {
+  const toggleGeneration = useCallback((genId: number) => {
     hapticSelection();
-    if (selectedGenerations.includes(genId)) {
-      setSelectedGenerations(selectedGenerations.filter((g) => g !== genId));
-    } else {
-      setSelectedGenerations([...selectedGenerations, genId]);
-    }
-  };
+    setSelectedGenerations((prev) =>
+      prev.includes(genId) ? prev.filter((g) => g !== genId) : [...prev, genId]
+    );
+  }, []);
 
-  const toggleCollectionFilter = (key: CollectionFilterStatus) => {
+  const toggleAshOwnedFilter = useCallback(() => {
     hapticSelection();
-    if (selectedCollectionFilters.includes(key)) {
-      setSelectedCollectionFilters(selectedCollectionFilters.filter((k) => k !== key));
-    } else {
-      let next = [...selectedCollectionFilters];
+    setIsAshOwnedSelected((prev) => !prev);
+  }, []);
+
+  const toggleCollectionFilter = useCallback((key: CollectionFilterStatus) => {
+    hapticSelection();
+    setSelectedCollectionFilters((prev) => {
+      if (prev.includes(key)) {
+        return prev.filter((k) => k !== key);
+      }
+      let next = [...prev];
       if (key === 'caught') next = next.filter((k) => k !== 'uncaught');
       if (key === 'uncaught') next = next.filter((k) => k !== 'caught');
       next.push(key);
-      setSelectedCollectionFilters(next);
-    }
-  };
+      return next;
+    });
+  }, []);
 
-  const handleApply = () => {
+  const handleApply = useCallback(() => {
+    const cleanCollection = selectedCollectionFilters.filter((f) => f !== 'ash_owned');
+    const finalCollection = isAshOwnedSelected
+      ? ([...cleanCollection, 'ash_owned'] as CollectionFilterStatus[])
+      : cleanCollection;
+
     onApplyFilters({
       ...filters,
       types: selectedTypes,
       generations: selectedGenerations,
       legendaryOnly,
       ability: ability.trim(),
-      collectionFilters: selectedCollectionFilters,
-      caughtOnly: selectedCollectionFilters.includes('caught'),
-      notCaughtOnly: selectedCollectionFilters.includes('uncaught'),
-      favoritesOnly: selectedCollectionFilters.includes('favorite'),
-      shinyOwnedOnly: selectedCollectionFilters.includes('shiny_owned'),
-      alphaOnly: selectedCollectionFilters.includes('alpha'),
-      hasCompetitiveBuildOnly: selectedCollectionFilters.includes('competitive_build'),
+      collectionFilters: finalCollection,
+      caughtOnly: finalCollection.includes('caught'),
+      notCaughtOnly: finalCollection.includes('uncaught'),
+      favoritesOnly: finalCollection.includes('favorite'),
+      shinyOwnedOnly: finalCollection.includes('shiny_owned'),
+      alphaOnly: finalCollection.includes('alpha'),
+      hasCompetitiveBuildOnly: finalCollection.includes('competitive_build'),
+      ashOwnedOnly: isAshOwnedSelected,
     });
     onClose();
-  };
+  }, [
+    selectedCollectionFilters,
+    isAshOwnedSelected,
+    onApplyFilters,
+    filters,
+    selectedTypes,
+    selectedGenerations,
+    legendaryOnly,
+    ability,
+    onClose,
+  ]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setSelectedTypes([]);
     setSelectedGenerations([]);
     setLegendaryOnly(false);
     setAbility('');
     setSelectedCollectionFilters([]);
+    setIsAshOwnedSelected(false);
     onResetFilters();
     onClose();
-  };
+  }, [onResetFilters, onClose]);
+
+  if (!visible) return null;
 
   return (
     <Modal
@@ -315,6 +340,48 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
                         </TouchableOpacity>
                       );
                     })}
+
+                    <TouchableOpacity
+                      key="ash-roster"
+                      activeOpacity={0.7}
+                      onPress={toggleAshOwnedFilter}
+                      style={[
+                        styles.genChip,
+                        {
+                          backgroundColor: isAshOwnedSelected
+                            ? colorScheme.primaryContainer
+                            : colorScheme.surfaceVariant,
+                          borderColor: isAshOwnedSelected
+                            ? colorScheme.primary
+                            : colorScheme.outline + '40',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.genChipTitle,
+                          {
+                            color: isAshOwnedSelected
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurfaceVariant,
+                          },
+                        ]}
+                      >
+                        Ash's Anime Roster
+                      </Text>
+                      <Text
+                        style={[
+                          styles.genChipRegion,
+                          {
+                            color: isAshOwnedSelected
+                              ? colorScheme.onPrimaryContainer + 'B0'
+                              : colorScheme.onSurfaceVariant + '90',
+                          },
+                        ]}
+                      >
+                        Anime
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -512,3 +579,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+export const FilterBottomSheet = memo(FilterBottomSheetComponent);

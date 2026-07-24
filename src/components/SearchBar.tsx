@@ -1,5 +1,11 @@
-import React from 'react';
+import React, { useEffect, useCallback, memo } from 'react';
 import { StyleSheet, TextInput, View, TouchableOpacity, Text } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { useAppTheme } from '../theme';
 
 interface SearchBarProps {
@@ -9,7 +15,7 @@ interface SearchBarProps {
   activeFilterCount: number;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({
+const SearchBarComponent: React.FC<SearchBarProps> = ({
   value,
   onChangeText,
   onOpenFilter,
@@ -17,8 +23,25 @@ export const SearchBar: React.FC<SearchBarProps> = ({
 }) => {
   const { colorScheme } = useAppTheme();
 
+  const entryOpacity = useSharedValue(0);
+  const entryTranslateY = useSharedValue(-16);
+
+  useEffect(() => {
+    entryOpacity.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.quad) });
+    entryTranslateY.value = withTiming(0, { duration: 400, easing: Easing.out(Easing.quad) });
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: entryOpacity.value,
+    transform: [{ translateY: entryTranslateY.value }],
+  }));
+
+  const handleClear = useCallback(() => {
+    onChangeText('');
+  }, [onChangeText]);
+
   return (
-    <View style={styles.container}>
+    <Animated.View style={[styles.container, animatedStyle]}>
       {/* Search Input Box */}
       <View
         style={[
@@ -44,7 +67,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         />
         {value.length > 0 ? (
           <TouchableOpacity
-            onPress={() => onChangeText('')}
+            onPress={handleClear}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.clearButton}
           >
@@ -81,9 +104,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           </View>
         ) : null}
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
 };
+
+export const SearchBar = memo(SearchBarComponent);
 
 const styles = StyleSheet.create({
   container: {

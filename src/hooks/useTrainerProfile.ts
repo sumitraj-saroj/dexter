@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SQLiteDatabase } from 'expo-sqlite';
 import {
@@ -22,6 +23,7 @@ export function useTrainerProfile(db: SQLiteDatabase | null) {
       return await getTrainerProfile(db);
     },
     enabled: Boolean(db),
+    staleTime: 5 * 60 * 1000,
   });
 
   const completionStatsQuery = useQuery<{
@@ -35,6 +37,7 @@ export function useTrainerProfile(db: SQLiteDatabase | null) {
       return await getPokedexCompletionStats(db);
     },
     enabled: Boolean(db),
+    staleTime: 5 * 60 * 1000,
   });
 
   const favoriteTypeQuery = useQuery<PokemonType | null>({
@@ -44,6 +47,7 @@ export function useTrainerProfile(db: SQLiteDatabase | null) {
       return await getFavoriteType(db);
     },
     enabled: Boolean(db),
+    staleTime: 5 * 60 * 1000,
   });
 
   const updateProfileMutation = useMutation({
@@ -89,15 +93,28 @@ export function useTrainerProfile(db: SQLiteDatabase | null) {
     },
   });
 
-  return {
-    profile: profileQuery.data,
-    isLoading: profileQuery.isLoading,
-    isError: profileQuery.isError,
-    completionStats: completionStatsQuery.data,
-    favoriteType: favoriteTypeQuery.data,
-    updateProfile: updateProfileMutation.mutateAsync,
-    toggleCaught: toggleCaughtMutation.mutateAsync,
-    recordSeen: recordSeenMutation.mutateAsync,
-    refetchProfile: profileQuery.refetch,
-  };
+  return useMemo(
+    () => ({
+      profile: profileQuery.data,
+      isLoading: profileQuery.isLoading,
+      isError: profileQuery.isError,
+      completionStats: completionStatsQuery.data,
+      favoriteType: favoriteTypeQuery.data,
+      updateProfile: updateProfileMutation.mutateAsync,
+      toggleCaught: toggleCaughtMutation.mutateAsync,
+      recordSeen: recordSeenMutation.mutateAsync,
+      refetchProfile: profileQuery.refetch,
+    }),
+    [
+      profileQuery.data,
+      profileQuery.isLoading,
+      profileQuery.isError,
+      profileQuery.refetch,
+      completionStatsQuery.data,
+      favoriteTypeQuery.data,
+      updateProfileMutation.mutateAsync,
+      toggleCaughtMutation.mutateAsync,
+      recordSeenMutation.mutateAsync,
+    ]
+  );
 }

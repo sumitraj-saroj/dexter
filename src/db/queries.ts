@@ -17,10 +17,18 @@ import {
   AchievementWithStatus,
   AchievementDataStats,
   AchievementDefinition,
+  BreedingInfo,
 } from '../types';
 import { ACHIEVEMENTS } from '../data/achievements';
+import { fetchSinglePokemon } from '../api/pokeapi';
 
 function mapRowToPokemon(row: any): Pokemon {
+  const eggGroups = row.egg_groups
+    ? row.egg_groups
+        .split(',')
+        .map((s: string) => s.trim())
+        .filter(Boolean)
+    : [];
   return {
     id: row.id,
     name: row.name,
@@ -36,10 +44,14 @@ function mapRowToPokemon(row: any): Pokemon {
     shinySpriteUrl: row.shiny_sprite_url || '',
     officialArtworkUrl: row.official_artwork_url || '',
     shinyArtworkUrl: row.shiny_artwork_url || '',
+    eggGroups,
+    hatchCounter: row.hatch_counter ?? null,
+    genderRate: row.gender_rate ?? null,
     isFavorite: Boolean(row.is_favorite),
     shinyOwned: Boolean(row.shiny_owned),
     isAlpha: Boolean(row.is_alpha),
     hasCompetitiveBuild: Boolean(row.has_competitive_build),
+    ashOwned: Boolean(row.ash_owned),
     isInTeam: Boolean(row.is_in_team),
     isCaught: Boolean(row.is_caught),
     isSeen: Boolean(row.is_seen),
@@ -82,11 +94,15 @@ export async function getAllPokemon(db: any): Promise<Pokemon[]> {
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
-      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
-      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
+      CASE WHEN t.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_in_team,
+      CASE WHEN c.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_caught,
+      CASE WHEN s.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_seen
     FROM pokemon p
     LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
+    LEFT JOIN team t ON t.pokemon_id = p.id
+    LEFT JOIN pokemon_caught c ON c.pokemon_id = p.id
+    LEFT JOIN pokemon_seen s ON s.pokemon_id = p.id
     ORDER BY p.id ASC;
   `;
   const rows = await runSelectQuery(db, sql);
@@ -100,11 +116,15 @@ export async function getPokemonById(db: any, id: number): Promise<Pokemon | nul
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
-      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
-      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
+      CASE WHEN t.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_in_team,
+      CASE WHEN c.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_caught,
+      CASE WHEN s.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_seen
     FROM pokemon p
     LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
+    LEFT JOIN team t ON t.pokemon_id = p.id
+    LEFT JOIN pokemon_caught c ON c.pokemon_id = p.id
+    LEFT JOIN pokemon_seen s ON s.pokemon_id = p.id
     WHERE p.id = ?;
   `;
   const row = await runSingleQuery(db, pokemonSql, [id]);
@@ -112,9 +132,14 @@ export async function getPokemonById(db: any, id: number): Promise<Pokemon | nul
 
   const pokemon = mapRowToPokemon(row);
 
-  // Fetch Stats
-  const statsSql = `SELECT hp, attack, defense, sp_attack, sp_defense, speed FROM pokemon_stats WHERE pokemon_id = ?;`;
-  const statsRow = await runSingleQuery(db, statsSql, [id]);
+  // Execute child queries in parallel via Promise.all to reduce IPC round-trips
+  const [statsRow, abilityRows, moveRows, evoRow] = await Promise.all([
+    runSingleQuery(db, `SELECT hp, attack, defense, sp_attack, sp_defense, speed FROM pokemon_stats WHERE pokemon_id = ?;`, [id]),
+    runSelectQuery(db, `SELECT ability_name as name, effect_text as effect, is_hidden as isHidden FROM pokemon_abilities WHERE pokemon_id = ?;`, [id]),
+    runSelectQuery(db, `SELECT move_name as name, level_learned as levelLearned, learn_method as learnMethod FROM pokemon_moves WHERE pokemon_id = ? ORDER BY level_learned ASC;`, [id]),
+    runSingleQuery(db, `SELECT evolves_from_id, evolution_trigger FROM evolution_chain WHERE pokemon_id = ?;`, [id]),
+  ]);
+
   if (statsRow) {
     pokemon.stats = {
       hp: statsRow.hp,
@@ -126,27 +151,18 @@ export async function getPokemonById(db: any, id: number): Promise<Pokemon | nul
     };
   }
 
-  // Fetch Abilities
-  const abilitiesSql = `SELECT ability_name as name, effect_text as effect, is_hidden as isHidden FROM pokemon_abilities WHERE pokemon_id = ?;`;
-  const abilityRows = await runSelectQuery(db, abilitiesSql, [id]);
   pokemon.abilities = abilityRows.map((a) => ({
     name: a.name,
     effect: a.effect || '',
     isHidden: Boolean(a.isHidden),
   }));
 
-  // Fetch Moves
-  const movesSql = `SELECT move_name as name, level_learned as levelLearned, learn_method as learnMethod FROM pokemon_moves WHERE pokemon_id = ? ORDER BY level_learned ASC;`;
-  const moveRows = await runSelectQuery(db, movesSql, [id]);
   pokemon.moves = moveRows.map((m) => ({
     name: m.name,
     levelLearned: m.levelLearned,
     learnMethod: m.learnMethod,
   }));
 
-  // Fetch Evolution
-  const evoSql = `SELECT evolves_from_id, evolution_trigger FROM evolution_chain WHERE pokemon_id = ?;`;
-  const evoRow = await runSingleQuery(db, evoSql, [id]);
   if (evoRow) {
     pokemon.evolvesFromId = evoRow.evolves_from_id;
     pokemon.evolutionTrigger = evoRow.evolution_trigger;
@@ -183,11 +199,15 @@ export async function searchPokemon(db: any, query: string): Promise<Pokemon[]> 
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
-      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
-      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
+      CASE WHEN t.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_in_team,
+      CASE WHEN c.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_caught,
+      CASE WHEN s.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_seen
     FROM pokemon p
     LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
+    LEFT JOIN team t ON t.pokemon_id = p.id
+    LEFT JOIN pokemon_caught c ON c.pokemon_id = p.id
+    LEFT JOIN pokemon_seen s ON s.pokemon_id = p.id
     WHERE LOWER(p.name) LIKE ?
        OR p.number LIKE ?
        OR CAST(p.id AS TEXT) = ?
@@ -225,11 +245,15 @@ export async function filterPokemon(db: any, options: FilterOptions): Promise<Po
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
-      EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
-      EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
-      EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
+      CASE WHEN t.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_in_team,
+      CASE WHEN c.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_caught,
+      CASE WHEN s.pokemon_id IS NOT NULL THEN 1 ELSE 0 END as is_seen
     FROM pokemon p
     LEFT JOIN pokemon_collection_status pcs ON pcs.pokemon_id = p.id
+    LEFT JOIN team t ON t.pokemon_id = p.id
+    LEFT JOIN pokemon_caught c ON c.pokemon_id = p.id
+    LEFT JOIN pokemon_seen s ON s.pokemon_id = p.id
   `;
 
   const joins: string[] = [];
@@ -303,6 +327,7 @@ export async function filterPokemon(db: any, options: FilterOptions): Promise<Po
   const isShinyFilter = shinyOwnedOnly || collectionFilters?.includes('shiny_owned');
   const isAlphaFilter = alphaOnly || collectionFilters?.includes('alpha');
   const isCompFilter = hasCompetitiveBuildOnly || collectionFilters?.includes('competitive_build');
+  const isAshFilter = options.ashOwnedOnly || collectionFilters?.includes('ash_owned');
 
   if (isCaughtFilter) {
     whereClauses.push(`EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id)`);
@@ -321,6 +346,9 @@ export async function filterPokemon(db: any, options: FilterOptions): Promise<Po
   }
   if (isCompFilter) {
     whereClauses.push(`COALESCE(pcs.has_competitive_build, 0) = 1`);
+  }
+  if (isAshFilter) {
+    whereClauses.push(`COALESCE(pcs.ash_owned, 0) = 1`);
   }
 
   if (joins.length > 0) {
@@ -405,6 +433,23 @@ export async function toggleCompetitiveBuild(db: any, pokemonId: number): Promis
   return Boolean(nextVal);
 }
 
+export async function toggleAshOwned(db: any, pokemonId: number): Promise<boolean> {
+  const current = await runSingleQuery(
+    db,
+    `SELECT ash_owned FROM pokemon_collection_status WHERE pokemon_id = ?;`,
+    [pokemonId]
+  );
+  const nextVal = current && current.ash_owned ? 0 : 1;
+
+  await runExecuteQuery(
+    db,
+    `INSERT INTO pokemon_collection_status (pokemon_id, ash_owned) VALUES (?, ?)
+     ON CONFLICT(pokemon_id) DO UPDATE SET ash_owned = excluded.ash_owned;`,
+    [pokemonId, nextVal]
+  );
+  return Boolean(nextVal);
+}
+
 export async function getFavorites(db: any): Promise<Pokemon[]> {
   const sql = `
     SELECT p.*,
@@ -412,6 +457,7 @@ export async function getFavorites(db: any): Promise<Pokemon[]> {
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
       EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
       EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
       EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
@@ -501,6 +547,7 @@ export async function getTeam(db: any): Promise<TeamMember[]> {
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
       1 as is_in_team,
       EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
       EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
@@ -629,6 +676,7 @@ export async function getQuizQuestionPokemon(db: any): Promise<{ target: Pokemon
       COALESCE(pcs.shiny_owned, 0) as shiny_owned,
       COALESCE(pcs.is_alpha, 0) as is_alpha,
       COALESCE(pcs.has_competitive_build, 0) as has_competitive_build,
+      COALESCE(pcs.ash_owned, 0) as ash_owned,
       EXISTS(SELECT 1 FROM team t WHERE t.pokemon_id = p.id) as is_in_team,
       EXISTS(SELECT 1 FROM pokemon_caught c WHERE c.pokemon_id = p.id) as is_caught,
       EXISTS(SELECT 1 FROM pokemon_seen s WHERE s.pokemon_id = p.id) as is_seen
@@ -1343,6 +1391,152 @@ export async function getAchievementsSummary(db: any): Promise<{
     totalCount,
     unlockedPercentage,
     achievements,
+  };
+}
+
+export async function ensurePokemonBreedingData(db: any, pokemonId: number): Promise<Pokemon | null> {
+  let pokemon = await getPokemonById(db, pokemonId);
+  if (!pokemon) return null;
+
+  if (pokemon.eggGroups && pokemon.eggGroups.length > 0 && pokemon.genderRate !== undefined && pokemon.genderRate !== null) {
+    return pokemon;
+  }
+
+  // Fetch species info dynamically
+  try {
+    const fetched = await fetchSinglePokemon(pokemonId);
+    if (fetched && fetched.pokemon) {
+      const eggGroupsStr = fetched.pokemon.egg_groups ? fetched.pokemon.egg_groups.join(', ') : '';
+      const hatchCounter = fetched.pokemon.hatch_counter ?? null;
+      const genderRate = fetched.pokemon.gender_rate ?? null;
+
+      await runExecuteQuery(
+        db,
+        `UPDATE pokemon SET egg_groups = ?, hatch_counter = ?, gender_rate = ? WHERE id = ?;`,
+        [eggGroupsStr, hatchCounter, genderRate, pokemonId]
+      );
+
+      // Insert any egg moves if missing
+      for (const mv of fetched.moves) {
+        if (mv.learn_method === 'egg') {
+          await runExecuteQuery(
+            db,
+            `INSERT INTO pokemon_moves (pokemon_id, move_name, level_learned, learn_method)
+             SELECT ?, ?, 0, 'egg'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM pokemon_moves WHERE pokemon_id = ? AND move_name = ? AND learn_method = 'egg'
+             );`,
+            [pokemonId, mv.move_name, pokemonId, mv.move_name]
+          );
+        }
+      }
+
+      pokemon = await getPokemonById(db, pokemonId);
+    }
+  } catch (err) {
+    console.warn(`Failed to dynamically fetch breeding data for #${pokemonId}`, err);
+  }
+
+  return pokemon;
+}
+
+export async function getBreedingCompatible(
+  db: any,
+  pokemonId: number
+): Promise<{ canBreed: boolean; reason?: string; compatiblePokemon: Pokemon[] }> {
+  const pokemon = await ensurePokemonBreedingData(db, pokemonId);
+  if (!pokemon) {
+    return { canBreed: false, reason: 'Pokemon not found', compatiblePokemon: [] };
+  }
+
+  const eggGroups = pokemon.eggGroups || [];
+
+  // 1. Undiscovered check
+  if (eggGroups.includes('Undiscovered') || eggGroups.includes('no-eggs')) {
+    return { canBreed: false, reason: 'Cannot breed (Undiscovered Egg Group)', compatiblePokemon: [] };
+  }
+
+  const isDitto = pokemon.id === 132 || pokemon.name.toLowerCase() === 'ditto' || eggGroups.includes('Ditto');
+  const isGenderless = pokemon.genderRate === -1;
+
+  // 2. Ditto
+  if (isDitto) {
+    const allRows = await getAllPokemon(db);
+    const compatible = allRows.filter((p) => {
+      if (p.id === 132 || p.name.toLowerCase() === 'ditto') return false;
+      const groups = p.eggGroups || [];
+      return !groups.includes('Undiscovered') && !groups.includes('no-eggs');
+    });
+    return { canBreed: true, compatiblePokemon: compatible };
+  }
+
+  // 3. Non-Ditto Genderless
+  if (isGenderless) {
+    const ditto = await getPokemonById(db, 132);
+    if (ditto) {
+      return { canBreed: true, compatiblePokemon: [ditto] };
+    }
+    const allRows = await getAllPokemon(db);
+    const dittoMatch = allRows.filter((p) => p.id === 132 || p.name.toLowerCase() === 'ditto');
+    return { canBreed: true, compatiblePokemon: dittoMatch };
+  }
+
+  // 4. Normal Pokemon
+  const allRows = await getAllPokemon(db);
+  const compatible = allRows.filter((p) => {
+    if (p.id === pokemon.id) return false;
+    const groups = p.eggGroups || [];
+    if (groups.includes('Undiscovered') || groups.includes('no-eggs')) return false;
+
+    // Ditto can breed with any non-Undiscovered Pokemon
+    if (p.id === 132 || p.name.toLowerCase() === 'ditto' || groups.includes('Ditto')) return true;
+
+    // Other genderless Pokemon CANNOT breed with normal Pokemon
+    if (p.genderRate === -1) return false;
+
+    // Must share at least 1 Egg Group
+    return groups.some((g) => eggGroups.includes(g));
+  });
+
+  return { canBreed: true, compatiblePokemon: compatible };
+}
+
+export async function getBreedingInfo(
+  db: any,
+  pokemonId: number
+): Promise<BreedingInfo | null> {
+  const pokemon = await ensurePokemonBreedingData(db, pokemonId);
+  if (!pokemon) return null;
+
+  const compatibility = await getBreedingCompatible(db, pokemonId);
+  const eggMoves = (pokemon.moves || []).filter((m) => m.learnMethod === 'egg');
+
+  const hatchCounter = pokemon.hatchCounter ?? null;
+  const hatchSteps = hatchCounter !== null ? (hatchCounter + 1) * 255 : null;
+
+  const genderRate = pokemon.genderRate ?? null;
+  const isGenderless = genderRate === -1;
+
+  let malePercentage: number | null = null;
+  let femalePercentage: number | null = null;
+
+  if (genderRate !== null && genderRate >= 0) {
+    femalePercentage = (genderRate / 8) * 100;
+    malePercentage = 100 - femalePercentage;
+  }
+
+  return {
+    canBreed: compatibility.canBreed,
+    reason: compatibility.reason,
+    eggGroups: pokemon.eggGroups || [],
+    hatchCounter,
+    hatchSteps,
+    genderRate,
+    isGenderless,
+    malePercentage,
+    femalePercentage,
+    eggMoves,
+    compatiblePokemon: compatibility.compatiblePokemon,
   };
 }
 

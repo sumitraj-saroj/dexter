@@ -44,7 +44,7 @@ const STAT_CONFIGS: StatConfig[] = [
   { key: 'total', label: 'TOTAL', maxVal: 720 },
 ];
 
-function CompareStatRow({
+const CompareStatRow = React.memo(function CompareStatRow({
   config,
   valA,
   valB,
@@ -172,7 +172,9 @@ function CompareStatRow({
       </View>
     </View>
   );
-}
+});
+
+const pickerKeyExtractor = (item: Pokemon) => item.id.toString();
 
 export default function CompareScreen() {
   const router = useRouter();
@@ -631,7 +633,7 @@ export default function CompareScreen() {
           {/* List of 151 Pokemon */}
           <FlatList
             data={filteredPickerList}
-            keyExtractor={(item) => item.id.toString()}
+            keyExtractor={pickerKeyExtractor}
             contentContainerStyle={styles.pickerListContent}
             renderItem={({ item }) => {
               const formattedItemName = item.name.charAt(0).toUpperCase() + item.name.slice(1);
