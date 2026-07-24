@@ -42,7 +42,7 @@ export default function PokemonDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const db = useAppDb();
-  const { colorScheme, setThemeForPokemon, setThemeByTypes } = useAppTheme();
+  const { colorScheme, isDark, setThemeForPokemon, setThemeByTypes } = useAppTheme();
   const toggleSquadMutation = useToggleSquadMutation(db);
 
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
@@ -1504,7 +1504,7 @@ export default function PokemonDetailScreen() {
           onNext={handleNextTourStep}
           onSkip={handleCompleteOrSkipTour}
           colorScheme={colorScheme}
-          isDark={colorScheme.background === '#121212' || colorScheme.background.startsWith('#1')}
+          isDark={isDark}
         />
 
         <StatusTooltipOverlay

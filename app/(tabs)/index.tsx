@@ -364,7 +364,6 @@ export default function HomeScreen() {
             renderItem={renderItem}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
-            estimatedItemSize={182}
             numColumns={2}
             ListHeaderComponent={renderListHeader}
             contentContainerStyle={styles.listContent}

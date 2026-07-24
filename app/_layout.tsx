@@ -1,5 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { View } from 'react-native';
+import { View, useColorScheme } from 'react-native';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite';
@@ -53,8 +53,10 @@ export default function RootLayout() {
     };
   }, []);
 
+  const colorScheme = useColorScheme();
+
   if (!db) {
-    return <View style={{ flex: 1, backgroundColor: '#FAFAFA' }} />;
+    return <View style={{ flex: 1, backgroundColor: colorScheme === 'dark' ? '#0D0D0D' : '#FAFAFA' }} />;
   }
 
   return (

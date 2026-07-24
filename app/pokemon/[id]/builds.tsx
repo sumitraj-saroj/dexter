@@ -53,7 +53,7 @@ export default function PokemonBuildsScreen() {
   const router = useRouter();
   const db = useAppDb();
   const queryClient = useQueryClient();
-  const { colorScheme } = useAppTheme();
+  const { colorScheme, isDark } = useAppTheme();
 
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
   const [builds, setBuilds] = useState<CompetitiveBuild[]>([]);
@@ -559,7 +559,16 @@ export default function PokemonBuildsScreen() {
                       style={[
                         styles.evCounterBadge,
                         {
-                          backgroundColor: totalEvs > 510 ? '#FEE2E2' : totalEvs === 510 ? '#FEF3C7' : colorScheme.primaryContainer,
+                          backgroundColor:
+                            totalEvs > 510
+                              ? isDark
+                                ? '#5C1D1D'
+                                : '#FEE2E2'
+                              : totalEvs === 510
+                              ? isDark
+                                ? '#2A2415'
+                                : '#FEF3C7'
+                              : colorScheme.primaryContainer,
                           borderColor: totalEvs > 510 ? '#EF4444' : colorScheme.primary,
                         },
                       ]}
@@ -567,7 +576,18 @@ export default function PokemonBuildsScreen() {
                       <Text
                         style={[
                           styles.evCounterText,
-                          { color: totalEvs > 510 ? '#DC2626' : totalEvs === 510 ? '#D97706' : colorScheme.onPrimaryContainer },
+                          {
+                            color:
+                              totalEvs > 510
+                                ? isDark
+                                  ? '#F28B82'
+                                  : '#DC2626'
+                                : totalEvs === 510
+                                ? isDark
+                                  ? '#F59E0B'
+                                  : '#D97706'
+                                : colorScheme.onPrimaryContainer,
+                          },
                         ]}
                       >
                         EVs: {totalEvs} / 510 ({remainingEvs} left)

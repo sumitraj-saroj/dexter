@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { ACHIEVEMENTS } from '../data/achievements';
 import { fetchSinglePokemon } from '../api/pokeapi';
+import { requestDexterWidgetUpdate } from '../widgets/widget-updater';
 
 function mapRowToPokemon(row: any): Pokemon {
   const eggGroups = row.egg_groups
@@ -938,6 +939,7 @@ export async function updateTrainerProfile(
   if (updates.avatarId !== undefined) {
     await runExecuteQuery(db, `UPDATE trainer_profile SET avatar_id = ? WHERE id = 1;`, [updates.avatarId]);
   }
+  requestDexterWidgetUpdate().catch(() => {});
   return await getTrainerProfile(db);
 }
 
@@ -953,6 +955,7 @@ export async function checkAndUpdateDailyStreak(
       `UPDATE trainer_profile SET current_streak = 1, xp = xp + 10, last_open_date = ?, created_date = ? WHERE id = 1;`,
       [todayStr, todayStr]
     );
+    requestDexterWidgetUpdate().catch(() => {});
     return { streakAwarded: true, streak: 1 };
   }
 
@@ -972,6 +975,7 @@ export async function checkAndUpdateDailyStreak(
       `UPDATE trainer_profile SET current_streak = ?, xp = xp + 10, last_open_date = ? WHERE id = 1;`,
       [nextStreak, todayStr]
     );
+    requestDexterWidgetUpdate().catch(() => {});
     return { streakAwarded: true, streak: nextStreak };
   } else if (diffDays > 1) {
     await runExecuteQuery(
@@ -979,6 +983,7 @@ export async function checkAndUpdateDailyStreak(
       `UPDATE trainer_profile SET current_streak = 1, xp = xp + 10, last_open_date = ? WHERE id = 1;`,
       [todayStr]
     );
+    requestDexterWidgetUpdate().catch(() => {});
     return { streakAwarded: true, streak: 1 };
   }
 
@@ -1003,6 +1008,7 @@ export async function recordPokemonSeen(
     [pokemonId, todayStr]
   );
   await runExecuteQuery(db, `UPDATE trainer_profile SET xp = xp + 5 WHERE id = 1;`);
+  requestDexterWidgetUpdate().catch(() => {});
   return { newlySeen: true };
 }
 
@@ -1018,6 +1024,7 @@ export async function togglePokemonCaught(
 
   if (existing) {
     await runExecuteQuery(db, `DELETE FROM pokemon_caught WHERE pokemon_id = ?;`, [pokemonId]);
+    requestDexterWidgetUpdate().catch(() => {});
     return { isCaught: false, newlyCaught: false };
   } else {
     await recordPokemonSeen(db, pokemonId);
@@ -1028,6 +1035,7 @@ export async function togglePokemonCaught(
       [pokemonId, todayStr]
     );
     await runExecuteQuery(db, `UPDATE trainer_profile SET xp = xp + 20 WHERE id = 1;`);
+    requestDexterWidgetUpdate().catch(() => {});
     return { isCaught: true, newlyCaught: true };
   }
 }
@@ -1040,6 +1048,7 @@ export async function recordQuizAnswer(db: any, isCorrect: boolean): Promise<voi
     `UPDATE trainer_profile SET total_answered = total_answered + 1, total_correct = total_correct + ?, xp = xp + ? WHERE id = 1;`,
     [correctInc, xpBonus]
   );
+  requestDexterWidgetUpdate().catch(() => {});
 }
 
 export async function getPokedexCompletionStats(

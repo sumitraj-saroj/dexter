@@ -21,7 +21,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const db = useAppDb();
   const queryClient = useQueryClient();
-  const { colorScheme, isDark, resetToNeutralTheme } = useAppTheme();
+  const { colorScheme, isDark, themeMode, setThemeMode, resetToNeutralTheme } = useAppTheme();
 
   // Always keep settings screen on neutral Apple theme
   useEffect(() => {
@@ -132,6 +132,59 @@ export default function SettingsScreen() {
               },
             ]}
           >
+            {/* Theme Mode Switcher */}
+            <View style={styles.settingRowVertical}>
+              <Text style={[styles.settingTitle, { color: colorScheme.onSurface }]}>
+                Appearance Theme
+              </Text>
+              <Text style={[styles.settingSub, { color: colorScheme.secondary }]}>
+                Select explicit Light or Dark mode, or follow your phone's OS system setting.
+              </Text>
+
+              <View style={styles.segmentedContainer}>
+                {(['light', 'dark', 'system'] as const).map((mode) => {
+                  const isSelected = themeMode === mode;
+                  const label =
+                    mode === 'light'
+                      ? '☀️ Light'
+                      : mode === 'dark'
+                      ? '🌙 Dark'
+                      : '📱 System';
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      activeOpacity={0.7}
+                      onPress={() => setThemeMode(mode)}
+                      style={[
+                        styles.segmentedPill,
+                        isSelected
+                          ? { backgroundColor: colorScheme.primary }
+                          : {
+                              backgroundColor: colorScheme.surfaceVariant,
+                              borderColor: colorScheme.outline,
+                              borderWidth: 1,
+                            },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentedPillText,
+                          isSelected
+                            ? { color: colorScheme.onPrimary }
+                            : { color: colorScheme.onSurface },
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colorScheme.outline, marginVertical: 14 }]} />
+
+            {/* Shiny Default Switch */}
             <View style={styles.settingRow}>
               <View style={{ flex: 1, paddingRight: 12 }}>
                 <Text style={[styles.settingTitle, { color: colorScheme.onSurface }]}>
@@ -325,7 +378,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   settingRowVertical: {
-    gap: 10,
+    gap: 8,
+  },
+  segmentedContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  segmentedPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentedPillText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   settingTitle: {
     fontSize: 15,

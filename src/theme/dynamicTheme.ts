@@ -44,22 +44,22 @@ export const APPLE_NEUTRAL_LIGHT = {
 };
 
 export const APPLE_NEUTRAL_DARK = {
-  background: '#121212',
-  surface: '#1E1E1E',
+  background: '#0D0D0D',
+  surface: '#1C1C1E',
   surfaceVariant: '#252525',
-  primary: '#F0F0F0',
-  onPrimary: '#121212',
-  primaryContainer: '#2A2A2A',
-  onPrimaryContainer: '#F0F0F0',
-  secondary: '#8A8A8E',
-  onSecondary: '#121212',
+  primary: '#F2F2F2',
+  onPrimary: '#0D0D0D',
+  primaryContainer: '#252525',
+  onPrimaryContainer: '#F2F2F2',
+  secondary: '#9A9A9E',
+  onSecondary: '#0D0D0D',
   secondaryContainer: '#252525',
-  onSecondaryContainer: '#F0F0F0',
-  onBackground: '#F0F0F0',
-  onSurface: '#F0F0F0',
-  onSurfaceVariant: '#8A8A8E',
+  onSecondaryContainer: '#F2F2F2',
+  onBackground: '#F2F2F2',
+  onSurface: '#F2F2F2',
+  onSurfaceVariant: '#9A9A9E',
   outline: '#2C2C2E',
-  divider: '#2C2C2E',
+  divider: '#262626',
 };
 
 function hexFromArgb(argbVal: number): string {
@@ -100,12 +100,13 @@ export function generateTonalPalette(
     secondaryContainer: hexFromArgb(secondaryPalette.primaryContainer),
     onSecondaryContainer: hexFromArgb(secondaryPalette.onPrimaryContainer),
     surface: isDark ? '#1C1C1E' : '#FFFFFF',
-    onSurface: isDark ? '#F2F2F7' : '#1C1C1E',
-    surfaceVariant: isDark ? '#2C2C2E' : '#F8F9FA',
-    onSurfaceVariant: isDark ? '#F2F2F7' : '#1C1C1E',
-    background: hexFromArgb(primaryPalette.background),
-    onBackground: hexFromArgb(primaryPalette.onBackground),
-    outline: isDark ? '#3A3A3C' : '#E5E5E5',
+    onSurface: isDark ? '#F2F2F2' : '#1C1C1E',
+    surfaceVariant: isDark ? '#252525' : '#F8F9FA',
+    onSurfaceVariant: isDark ? '#9A9A9E' : '#8A8A8E',
+    background: isDark ? '#0D0D0D' : hexFromArgb(primaryPalette.background),
+    onBackground: isDark ? '#F2F2F2' : hexFromArgb(primaryPalette.onBackground),
+    outline: isDark ? '#2C2C2E' : '#E5E5E5',
+    divider: isDark ? '#262626' : '#F0F0F0',
   };
 }
 

@@ -303,6 +303,8 @@ export interface FullPokemonData {
   }>;
 }
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface M3ColorScheme {
   primary: string;
   onPrimary: string;
@@ -319,6 +321,7 @@ export interface M3ColorScheme {
   background: string;
   onBackground: string;
   outline: string;
+  divider: string;
 }
 
 export interface QuizScoreRecord {

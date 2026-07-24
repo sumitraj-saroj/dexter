@@ -6,13 +6,15 @@ import Animated, {
   useAnimatedStyle,
   SharedValue,
 } from 'react-native-reanimated';
-import { M3ColorScheme, PokemonType, Pokemon } from '../types';
+import { M3ColorScheme, PokemonType, Pokemon, ThemeMode } from '../types';
 import {
   TYPE_SEED_COLORS,
   NEUTRAL_SEED_COLOR,
   generateTonalPalette,
   getTonalPaletteForPokemon,
 } from './dynamicTheme';
+import { DbContext } from '../context/DbContext';
+import { getUserSetting, setUserSetting } from '../db/queries';
 
 interface AnimatedThemeTokens {
   background: SharedValue<string>;
@@ -24,12 +26,15 @@ interface AnimatedThemeTokens {
   onBackground: SharedValue<string>;
   onSurface: SharedValue<string>;
   outline: SharedValue<string>;
+  divider: SharedValue<string>;
 }
 
 interface ThemeContextType {
   colorScheme: M3ColorScheme;
   animatedTokens: AnimatedThemeTokens;
   isDark: boolean;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   activePrimarySeed: string;
   activeSecondarySeed: string | null;
   setThemeForPokemon: (pokemon: { primaryType: PokemonType; secondaryType?: PokemonType | null }) => void;
@@ -40,8 +45,51 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const db = useContext(DbContext);
   const systemColorScheme = useColorScheme();
-  const isDark = systemColorScheme === 'dark';
+
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+
+  // Load persistent theme setting from SQLite on startup
+  useEffect(() => {
+    let isMounted = true;
+    async function loadThemeMode() {
+      if (!db) return;
+      try {
+        const savedMode = await getUserSetting(db, 'theme_mode', 'system');
+        if (isMounted && (savedMode === 'light' || savedMode === 'dark' || savedMode === 'system')) {
+          setThemeModeState(savedMode as ThemeMode);
+        }
+      } catch (err) {
+        console.error('Failed to load theme_mode setting:', err);
+      }
+    }
+    loadThemeMode();
+    return () => {
+      isMounted = false;
+    };
+  }, [db]);
+
+  const setThemeMode = useCallback(
+    async (mode: ThemeMode) => {
+      setThemeModeState(mode);
+      if (db) {
+        try {
+          await setUserSetting(db, 'theme_mode', mode);
+        } catch (err) {
+          console.error('Failed to save theme_mode setting:', err);
+        }
+      }
+    },
+    [db]
+  );
+
+  const isDark = useMemo(() => {
+    if (themeMode === 'system') {
+      return systemColorScheme === 'dark';
+    }
+    return themeMode === 'dark';
+  }, [themeMode, systemColorScheme]);
 
   const [activePrimarySeed, setActivePrimarySeed] = useState<string>(NEUTRAL_SEED_COLOR);
   const [activeSecondarySeed, setActiveSecondarySeed] = useState<string | null>(null);
@@ -61,6 +109,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const onBackgroundVal = useSharedValue(colorScheme.onBackground);
   const onSurfaceVal = useSharedValue(colorScheme.onSurface);
   const outlineVal = useSharedValue(colorScheme.outline);
+  const dividerVal = useSharedValue(colorScheme.divider);
 
   // Animate values when colorScheme changes
   useEffect(() => {
@@ -74,6 +123,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     onBackgroundVal.value = withTiming(colorScheme.onBackground, timingConfig);
     onSurfaceVal.value = withTiming(colorScheme.onSurface, timingConfig);
     outlineVal.value = withTiming(colorScheme.outline, timingConfig);
+    dividerVal.value = withTiming(colorScheme.divider, timingConfig);
   }, [colorScheme]);
 
   const setThemeByTypes = useCallback((primaryType: PokemonType, secondaryType?: PokemonType | null) => {
@@ -103,6 +153,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       onBackground: onBackgroundVal,
       onSurface: onSurfaceVal,
       outline: outlineVal,
+      divider: dividerVal,
     }),
     [
       backgroundVal,
@@ -114,6 +165,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       onBackgroundVal,
       onSurfaceVal,
       outlineVal,
+      dividerVal,
     ]
   );
 
@@ -123,6 +175,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         colorScheme,
         animatedTokens,
         isDark,
+        themeMode,
+        setThemeMode,
         activePrimarySeed,
         activeSecondarySeed,
         setThemeForPokemon,

@@ -50,5 +50,6 @@ export function generateM3Scheme(hexColor: string, isDark: boolean = false): M3C
     background: hexFromArgb(palette.background),
     onBackground: hexFromArgb(palette.onBackground),
     outline: hexFromArgb(palette.outline),
+    divider: isDark ? '#262626' : '#F0F0F0',
   };
 }

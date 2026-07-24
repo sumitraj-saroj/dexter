@@ -192,7 +192,7 @@ export default function AchievementsScreen() {
           </View>
 
           {/* Progress Bar */}
-          <View style={[styles.progressBarTrack, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <View style={[styles.progressBarTrack, { backgroundColor: colorScheme.surfaceVariant }]}>
             <View
               style={[
                 styles.progressBarFill,
@@ -204,8 +204,8 @@ export default function AchievementsScreen() {
 
         {/* Dev Mode Actions Bar */}
         {isDevMode && (
-          <View style={[styles.devCard, { backgroundColor: isDark ? '#1E293B' : '#FEF3C7' }]}>
-            <Text style={[styles.devTitle, { color: isDark ? '#F59E0B' : '#B45309' }]}>
+          <View style={[styles.devCard, { backgroundColor: colorScheme.secondaryContainer }]}>
+            <Text style={[styles.devTitle, { color: colorScheme.onSecondaryContainer }]}>
               🧪 Developer Testing Helpers
             </Text>
             <View style={styles.devActionsRow}>
@@ -324,9 +324,7 @@ function AchievementCard({
           {
             backgroundColor: item.isUnlocked
               ? colorScheme.primaryContainer
-              : isDark
-              ? '#334155'
-              : '#E2E8F0',
+              : colorScheme.surfaceVariant,
           },
         ]}
       >
@@ -358,7 +356,7 @@ function AchievementCard({
               <Text style={[styles.statusBadgeText, { color: '#10B981' }]}>Unlocked</Text>
             </View>
           ) : (
-            <View style={[styles.statusBadge, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]}>
+            <View style={[styles.statusBadge, { backgroundColor: colorScheme.surfaceVariant }]}>
               <Ionicons name="lock-closed" size={12} color={colorScheme.secondary} />
               <Text style={[styles.statusBadgeText, { color: colorScheme.secondary }]}>Locked</Text>
             </View>
