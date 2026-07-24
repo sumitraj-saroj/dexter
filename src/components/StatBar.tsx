@@ -14,9 +14,10 @@ interface StatBarProps {
   value: number;
   maxVal?: number;
   index?: number;
+  barColor?: string;
 }
 
-export const StatBar: React.FC<StatBarProps> = ({ label, value, maxVal = 255, index = 0 }) => {
+export const StatBar: React.FC<StatBarProps> = ({ label, value, maxVal = 255, index = 0, barColor }) => {
   const { colorScheme, animatedTokens } = useAppTheme();
   const progress = useSharedValue(0);
 
@@ -33,7 +34,7 @@ export const StatBar: React.FC<StatBarProps> = ({ label, value, maxVal = 255, in
 
   const animatedBarStyle = useAnimatedStyle(() => ({
     width: `${progress.value * 100}%`,
-    backgroundColor: animatedTokens.primary.value,
+    backgroundColor: barColor || animatedTokens.primary.value,
   }));
 
   return (
