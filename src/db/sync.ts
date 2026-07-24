@@ -1,10 +1,10 @@
-import { fetchAllNationalPokemon, fetchRegionalVariantsForSpecies } from '../api/pokeapi';
+import { fetchAllNationalPokemon, fetchRegionalVariantsForSpecies, fetchSpecialFormsForSpecies } from '../api/pokeapi';
 import { getUserSetting, setUserSetting } from './queries';
 import { FullPokemonData } from '../types';
 
-const CURRENT_DATA_VERSION = '4';
+const CURRENT_DATA_VERSION = '5';
 
-async function insertVariant(db: any, v: NonNullable<FullPokemonData['variants']>[0]): Promise<void> {
+export async function insertVariant(db: any, v: NonNullable<FullPokemonData['variants']>[0]): Promise<void> {
   let variantId: number | null = null;
   if (typeof db.runAsync === 'function') {
     const res: any = await db.runAsync(
@@ -75,6 +75,79 @@ async function insertVariant(db: any, v: NonNullable<FullPokemonData['variants']
   }
 }
 
+export async function insertSpecialForm(db: any, sf: NonNullable<FullPokemonData['specialForms']>[0]): Promise<void> {
+  let formId: number | null = null;
+  if (typeof db.runAsync === 'function') {
+    const res: any = await db.runAsync(
+      `INSERT INTO pokemon_special_forms (base_pokemon_id, form_type, form_name, form_label, primary_type, secondary_type, height, weight, flavor_text, hp, attack, defense, sp_attack, sp_defense, speed, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        sf.base_pokemon_id,
+        sf.form_type,
+        sf.form_name,
+        sf.form_label,
+        sf.primary_type,
+        sf.secondary_type,
+        sf.height,
+        sf.weight,
+        sf.flavor_text,
+        sf.stats.hp,
+        sf.stats.attack,
+        sf.stats.defense,
+        sf.stats.sp_attack,
+        sf.stats.sp_defense,
+        sf.stats.speed,
+        sf.sprite_url,
+        sf.shiny_sprite_url,
+        sf.official_artwork_url,
+        sf.shiny_artwork_url,
+      ]
+    );
+    formId = res?.lastInsertRowId || null;
+    if (formId) {
+      for (const ab of sf.abilities) {
+        await db.runAsync(
+          `INSERT INTO pokemon_special_form_abilities (form_id, ability_name, effect_text, is_hidden) VALUES (?, ?, ?, ?)`,
+          [formId, ab.ability_name, ab.effect_text, ab.is_hidden ? 1 : 0]
+        );
+      }
+    }
+  } else if (typeof db.prepare === 'function') {
+    const stmt = db.prepare(
+      `INSERT INTO pokemon_special_forms (base_pokemon_id, form_type, form_name, form_label, primary_type, secondary_type, height, weight, flavor_text, hp, attack, defense, sp_attack, sp_defense, speed, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const info = stmt.run(
+      sf.base_pokemon_id,
+      sf.form_type,
+      sf.form_name,
+      sf.form_label,
+      sf.primary_type,
+      sf.secondary_type,
+      sf.height,
+      sf.weight,
+      sf.flavor_text,
+      sf.stats.hp,
+      sf.stats.attack,
+      sf.stats.defense,
+      sf.stats.sp_attack,
+      sf.stats.sp_defense,
+      sf.stats.speed,
+      sf.sprite_url,
+      sf.shiny_sprite_url,
+      sf.official_artwork_url,
+      sf.shiny_artwork_url
+    );
+    formId = Number(info.lastInsertRowid);
+    const abStmt = db.prepare(
+      `INSERT INTO pokemon_special_form_abilities (form_id, ability_name, effect_text, is_hidden) VALUES (?, ?, ?, ?)`
+    );
+    for (const ab of sf.abilities) {
+      abStmt.run(formId, ab.ability_name, ab.effect_text, ab.is_hidden ? 1 : 0);
+    }
+  }
+}
+
 export async function isDatabaseSynced(db: any): Promise<boolean> {
   try {
     let count = 0;
@@ -92,41 +165,52 @@ export async function isDatabaseSynced(db: any): Promise<boolean> {
       count = row?.count || 0;
     }
 
-    const version = await getUserSetting(db, 'data_version', '0');
-    return count >= 1000 && version === CURRENT_DATA_VERSION;
+    return count >= 1000;
   } catch (error) {
     return false;
   }
 }
 
 export async function syncRegionalVariantsOnly(db: any): Promise<void> {
-  let pokemonIds: number[] = [];
+  let pokemonList: Array<{ id: number; name: string }> = [];
   if (typeof db.getAllAsync === 'function') {
-    const rows = await db.getAllAsync('SELECT id FROM pokemon ORDER BY id ASC');
-    pokemonIds = rows.map((r: any) => r.id);
+    const rows = await db.getAllAsync('SELECT id, name FROM pokemon ORDER BY id ASC');
+    pokemonList = rows.map((r: any) => ({ id: r.id, name: r.name }));
   } else if (typeof db.prepare === 'function') {
-    const rows = db.prepare('SELECT id FROM pokemon ORDER BY id ASC').all();
-    pokemonIds = rows.map((r: any) => r.id);
+    const rows = db.prepare('SELECT id, name FROM pokemon ORDER BY id ASC').all();
+    pokemonList = rows.map((r: any) => ({ id: r.id, name: r.name }));
   }
 
-  // Clear existing variants before backfill
+  // Clear existing variants and special forms before backfill
   if (typeof db.runAsync === 'function') {
     await db.runAsync('DELETE FROM pokemon_variant_abilities;');
     await db.runAsync('DELETE FROM pokemon_variants;');
+    await db.runAsync('DELETE FROM pokemon_special_form_abilities;');
+    await db.runAsync('DELETE FROM pokemon_special_forms;');
   } else if (typeof db.prepare === 'function') {
     db.prepare('DELETE FROM pokemon_variant_abilities;').run();
     db.prepare('DELETE FROM pokemon_variants;').run();
+    db.prepare('DELETE FROM pokemon_special_form_abilities;').run();
+    db.prepare('DELETE FROM pokemon_special_forms;').run();
   }
 
   const batchSize = 10;
-  for (let i = 0; i < pokemonIds.length; i += batchSize) {
-    const batch = pokemonIds.slice(i, i + batchSize);
+  for (let i = 0; i < pokemonList.length; i += batchSize) {
+    const batch = pokemonList.slice(i, i + batchSize);
     await Promise.all(
-      batch.map(async (id) => {
-        const variants = await fetchRegionalVariantsForSpecies(id);
+      batch.map(async (item) => {
+        const [variants, specialForms] = await Promise.all([
+          fetchRegionalVariantsForSpecies(item.id),
+          fetchSpecialFormsForSpecies(item.id, item.name),
+        ]);
         if (variants && variants.length > 0) {
           for (const v of variants) {
             await insertVariant(db, v);
+          }
+        }
+        if (specialForms && specialForms.length > 0) {
+          for (const sf of specialForms) {
+            await insertSpecialForm(db, sf);
           }
         }
       })
@@ -151,13 +235,7 @@ export async function syncNationalPokemon(
       count = row?.count || 0;
     }
 
-    const version = await getUserSetting(db, 'data_version', '0');
-
     if (count >= 1000) {
-      if (version !== CURRENT_DATA_VERSION) {
-        // Run targeted incremental variant sync backfill
-        await syncRegionalVariantsOnly(db);
-      }
       if (onProgress) onProgress(1025, 1025);
       return;
     }
@@ -170,6 +248,8 @@ export async function syncNationalPokemon(
     await db.withTransactionAsync(async () => {
       // Clear existing records before sync
       await db.execAsync(`
+        DELETE FROM pokemon_special_form_abilities;
+        DELETE FROM pokemon_special_forms;
         DELETE FROM pokemon_variant_abilities;
         DELETE FROM pokemon_variants;
         DELETE FROM pokemon_moves;
@@ -188,7 +268,7 @@ export async function syncNationalPokemon(
       }
 
       for (const item of pokemonList) {
-        const { pokemon, stats, abilities, moves, evolution, variants } = item;
+        const { pokemon, stats, abilities, moves, evolution, variants, specialForms } = item;
 
         await db.runAsync(
           `INSERT INTO pokemon (id, name, number, height, weight, primary_type, secondary_type, is_legendary, is_mythical, flavor_text, sprite_url, shiny_sprite_url, official_artwork_url, shiny_artwork_url)
@@ -254,12 +334,20 @@ export async function syncNationalPokemon(
             await insertVariant(db, v);
           }
         }
+
+        if (specialForms && specialForms.length > 0) {
+          for (const sf of specialForms) {
+            await insertSpecialForm(db, sf);
+          }
+        }
       }
     });
     await setUserSetting(db, 'data_version', CURRENT_DATA_VERSION);
   } else if (typeof db.prepare === 'function') {
     // Node.js sqlite (better-sqlite3 style) for testing
     const deleteQueries = [
+      'DELETE FROM pokemon_special_form_abilities;',
+      'DELETE FROM pokemon_special_forms;',
       'DELETE FROM pokemon_variant_abilities;',
       'DELETE FROM pokemon_variants;',
       'DELETE FROM pokemon_moves;',
@@ -303,7 +391,7 @@ export async function syncNationalPokemon(
         }
 
         for (const item of pList) {
-          const { pokemon, stats, abilities, moves, evolution, variants } = item;
+          const { pokemon, stats, abilities, moves, evolution, variants, specialForms } = item;
           insertPokemon.run(
             pokemon.id,
             pokemon.name,
@@ -341,6 +429,11 @@ export async function syncNationalPokemon(
           if (variants && variants.length > 0) {
             for (const v of variants) {
               insertVariant(db, v);
+            }
+          }
+          if (specialForms && specialForms.length > 0) {
+            for (const sf of specialForms) {
+              insertSpecialForm(db, sf);
             }
           }
         }

@@ -125,4 +125,40 @@ CREATE TABLE IF NOT EXISTS pokemon_variant_abilities (
 
 CREATE INDEX IF NOT EXISTS idx_variant_base_pokemon_id ON pokemon_variants(base_pokemon_id);
 CREATE INDEX IF NOT EXISTS idx_variant_abilities_variant_id ON pokemon_variant_abilities(variant_id);
+
+CREATE TABLE IF NOT EXISTS pokemon_special_forms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  base_pokemon_id INTEGER NOT NULL,
+  form_type TEXT NOT NULL,
+  form_name TEXT NOT NULL,
+  form_label TEXT NOT NULL,
+  primary_type TEXT NOT NULL,
+  secondary_type TEXT,
+  height INTEGER,
+  weight INTEGER,
+  flavor_text TEXT,
+  hp INTEGER NOT NULL,
+  attack INTEGER NOT NULL,
+  defense INTEGER NOT NULL,
+  sp_attack INTEGER NOT NULL,
+  sp_defense INTEGER NOT NULL,
+  speed INTEGER NOT NULL,
+  sprite_url TEXT,
+  shiny_sprite_url TEXT,
+  official_artwork_url TEXT,
+  shiny_artwork_url TEXT,
+  FOREIGN KEY (base_pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS pokemon_special_form_abilities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  form_id INTEGER NOT NULL,
+  ability_name TEXT NOT NULL,
+  effect_text TEXT,
+  is_hidden INTEGER DEFAULT 0,
+  FOREIGN KEY (form_id) REFERENCES pokemon_special_forms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_special_forms_base_pokemon_id ON pokemon_special_forms(base_pokemon_id);
+CREATE INDEX IF NOT EXISTS idx_special_form_abilities_form_id ON pokemon_special_form_abilities(form_id);
 `;

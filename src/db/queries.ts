@@ -1,4 +1,4 @@
-import { FilterOptions, Generation, Pokemon, PokemonAbility, PokemonMove, PokemonStat, PokemonVariant, QuizScoreRecord, TeamMember } from '../types';
+import { FilterOptions, Generation, Pokemon, PokemonAbility, PokemonMove, PokemonSpecialForm, PokemonStat, PokemonVariant, QuizScoreRecord, TeamMember } from '../types';
 
 function mapRowToPokemon(row: any): Pokemon {
   return {
@@ -620,6 +620,53 @@ export async function getVariantsForPokemon(db: any, basePokemonId: number): Pro
   }
 
   return variants;
+}
+
+export async function getSpecialFormsForPokemon(db: any, basePokemonId: number): Promise<PokemonSpecialForm[]> {
+  const sql = `
+    SELECT * FROM pokemon_special_forms WHERE base_pokemon_id = ? ORDER BY id ASC;
+  `;
+  const rows = await runSelectQuery(db, sql, [basePokemonId]);
+  if (!rows || rows.length === 0) return [];
+
+  const forms: PokemonSpecialForm[] = [];
+
+  for (const r of rows) {
+    const abSql = `SELECT ability_name as name, effect_text as effect, is_hidden as isHidden FROM pokemon_special_form_abilities WHERE form_id = ?;`;
+    const abRows = await runSelectQuery(db, abSql, [r.id]);
+
+    forms.push({
+      id: r.id,
+      basePokemonId: r.base_pokemon_id,
+      formType: r.form_type as any,
+      formName: r.form_name,
+      formLabel: r.form_label,
+      primaryType: r.primary_type as any,
+      secondaryType: r.secondary_type ? (r.secondary_type as any) : null,
+      height: r.height,
+      weight: r.weight,
+      flavorText: r.flavor_text || '',
+      spriteUrl: r.sprite_url || '',
+      shinySpriteUrl: r.shiny_sprite_url || '',
+      officialArtworkUrl: r.official_artwork_url || '',
+      shinyArtworkUrl: r.shiny_artwork_url || '',
+      stats: {
+        hp: r.hp,
+        attack: r.attack,
+        defense: r.defense,
+        specialAttack: r.sp_attack,
+        specialDefense: r.sp_defense,
+        speed: r.speed,
+      },
+      abilities: abRows.map((a: any) => ({
+        name: a.name,
+        effect: a.effect || '',
+        isHidden: Boolean(a.isHidden),
+      })),
+    });
+  }
+
+  return forms;
 }
 
 

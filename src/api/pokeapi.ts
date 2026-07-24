@@ -231,13 +231,18 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
 
   const formattedNumber = `#${String(speciesId).padStart(3, '0')}`;
 
-  // Fetch Regional Variants if any exist in varieties
-  const variantDataList = await fetchRegionalVariantsForSpecies(speciesId, sData.varieties, flavor_text);
+  const speciesName = sData.name || pData.name;
+
+  // Fetch Regional Variants and Special Forms if any exist in varieties
+  const [variantDataList, specialFormsList] = await Promise.all([
+    fetchRegionalVariantsForSpecies(speciesId, sData.varieties, flavor_text),
+    fetchSpecialFormsForSpecies(speciesId, speciesName, sData.varieties, flavor_text),
+  ]);
 
   return {
     pokemon: {
       id: speciesId,
-      name: sData.name || pData.name,
+      name: speciesName,
       number: formattedNumber,
       height: pData.height,
       weight: pData.weight,
@@ -259,6 +264,7 @@ export async function fetchSinglePokemon(speciesId: number): Promise<FullPokemon
       evolution_trigger: null,
     },
     variants: variantDataList,
+    specialForms: specialFormsList,
   };
 }
 
@@ -420,4 +426,314 @@ export async function fetchAllNationalPokemon(
 
   results.sort((a, b) => a.pokemon.id - b.pokemon.id);
   return { pokemonList: results, generations };
+}
+
+const flaggedCosmeticSpeciesSet = new Set<string>();
+
+export function getFlaggedCosmeticSpecies(): string[] {
+  return Array.from(flaggedCosmeticSpeciesSet);
+}
+
+function capitalizeStr(str: string): string {
+  return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+}
+
+export function classifySpecialForm(
+  varName: string,
+  speciesName: string
+): { isSpecialForm: boolean; isCosmeticOnly: boolean; formType: import('../types').SpecialFormType; formLabel: string } | null {
+  const lower = varName.toLowerCase();
+  const sLower = speciesName.toLowerCase();
+
+  // If regional variant, ignore here
+  if (getRegionFromVarietyName(lower) !== null) return null;
+
+  // Mega Evolutions
+  if (lower.endsWith('-mega-x') || lower.includes('-mega-x-')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'mega_x', formLabel: `Mega ${capitalizeStr(speciesName)} X` };
+  }
+  if (lower.endsWith('-mega-y') || lower.includes('-mega-y-')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'mega_y', formLabel: `Mega ${capitalizeStr(speciesName)} Y` };
+  }
+  if (lower.endsWith('-mega') || lower.includes('-mega-')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'mega', formLabel: `Mega ${capitalizeStr(speciesName)}` };
+  }
+
+  // Gigantamax / Eternamax
+  if (lower.endsWith('-gmax') || lower.includes('-gmax-')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'gmax', formLabel: `Gigantamax ${capitalizeStr(speciesName)}` };
+  }
+  if (lower.endsWith('-eternamax')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'gmax', formLabel: `Eternamax ${capitalizeStr(speciesName)}` };
+  }
+
+  // Cosmetic-only species (for non-mega, non-gmax forms)
+  const cosmeticSpeciesList = [
+    'alcremie',
+    'unown',
+    'vivillon',
+    'furfrou',
+    'flabebe',
+    'florges',
+    'deerling',
+    'sawsbuck',
+    'tatsugiri',
+    'squawkabilly',
+    'sinistea',
+    'polteageist',
+    'poltchageist',
+    'sinistcha',
+    'maushold',
+    'dudunsparce',
+    'spinda',
+  ];
+
+  if (sLower === 'minior') {
+    if (lower === 'minior-red-meteor' || lower === 'minior-meteor') {
+      return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Meteor Form' };
+    }
+    flaggedCosmeticSpeciesSet.add(`${speciesName} (${varName})`);
+    return { isSpecialForm: false, isCosmeticOnly: true, formType: 'special', formLabel: '' };
+  }
+
+  if (sLower === 'floette' && !lower.includes('eternal')) {
+    flaggedCosmeticSpeciesSet.add(`${speciesName} (${varName})`);
+    return { isSpecialForm: false, isCosmeticOnly: true, formType: 'special', formLabel: '' };
+  }
+
+  if (cosmeticSpeciesList.includes(sLower)) {
+    flaggedCosmeticSpeciesSet.add(`${speciesName} (${varName})`);
+    return { isSpecialForm: false, isCosmeticOnly: true, formType: 'special', formLabel: '' };
+  }
+
+  // Special Alternate Formes
+  if (sLower === 'deoxys') {
+    if (lower.endsWith('-attack')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Attack Forme' };
+    if (lower.endsWith('-defense')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Defense Forme' };
+    if (lower.endsWith('-speed')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Speed Forme' };
+  }
+
+  if (sLower === 'rotom') {
+    if (lower.endsWith('-heat')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Heat Rotom' };
+    if (lower.endsWith('-wash')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Wash Rotom' };
+    if (lower.endsWith('-frost')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Frost Rotom' };
+    if (lower.endsWith('-fan')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Fan Rotom' };
+    if (lower.endsWith('-mow')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Mow Rotom' };
+  }
+
+  if (sLower === 'giratina' && lower.endsWith('-origin')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Origin Forme' };
+  }
+
+  if (sLower === 'shaymin' && lower.endsWith('-sky')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Sky Forme' };
+  }
+
+  if (sLower === 'kyurem') {
+    if (lower.endsWith('-black')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Black Kyurem' };
+    if (lower.endsWith('-white')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'White Kyurem' };
+  }
+
+  if (sLower === 'necrozma') {
+    if (lower.endsWith('-dusk')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Dusk Mane' };
+    if (lower.endsWith('-dawn')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Dawn Wings' };
+    if (lower.endsWith('-ultra')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Ultra Necrozma' };
+  }
+
+  if (sLower === 'zacian' && lower.endsWith('-crowned')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Crowned Sword' };
+  }
+  if (sLower === 'zamazenta' && lower.endsWith('-crowned')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Crowned Shield' };
+  }
+
+  if (sLower === 'calyrex') {
+    if (lower.endsWith('-ice')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Ice Rider' };
+    if (lower.endsWith('-shadow')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Shadow Rider' };
+  }
+
+  if (sLower === 'aegislash' && lower.endsWith('-blade')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Blade Forme' };
+  }
+
+  if (sLower === 'darmanitan' && lower.endsWith('-zen')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Zen Mode' };
+  }
+
+  if (sLower === 'meloetta' && lower.endsWith('-pirouette')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Pirouette Forme' };
+  }
+
+  if (sLower === 'hoopa' && lower.endsWith('-unbound')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Hoopa Unbound' };
+  }
+
+  if (sLower === 'wishiwashi' && lower.endsWith('-school')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'School Form' };
+  }
+
+  if (sLower === 'greninja' && lower.endsWith('-ash')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Ash-Greninja' };
+  }
+
+  if (sLower === 'zygarde') {
+    if (lower.endsWith('-10')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: '10% Forme' };
+    if (lower.endsWith('-complete')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Complete Forme' };
+  }
+
+  if (sLower === 'minior' && (lower.endsWith('-meteor') || lower.includes('-meteor'))) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Meteor Form' };
+  }
+
+  if (sLower === 'floette' && lower.includes('-eternal')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Eternal Flower' };
+  }
+
+  if (sLower === 'ogerpon') {
+    if (lower.includes('wellspring')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Wellspring Mask' };
+    if (lower.includes('hearthflame')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Hearthflame Mask' };
+    if (lower.includes('cornerstone')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Cornerstone Mask' };
+  }
+
+  if (sLower === 'terapagos') {
+    if (lower.endsWith('-terastal')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Terastal Form' };
+    if (lower.endsWith('-stellar')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Stellar Form' };
+  }
+
+  if (sLower === 'palafin' && lower.endsWith('-hero')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Hero Form' };
+  }
+
+  if (sLower === 'toxtricity' && lower.endsWith('-low-key')) {
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Low Key Form' };
+  }
+
+  if (sLower === 'lycanroc') {
+    if (lower.endsWith('-midnight')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Midnight Form' };
+    if (lower.endsWith('-dusk')) return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: 'Dusk Form' };
+  }
+
+  if (sLower === 'arceus' && lower.includes('-')) {
+    const typeName = lower.replace('arceus-', '');
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: `${capitalizeStr(typeName)} Plate` };
+  }
+
+  if (sLower === 'silvally' && lower.includes('-')) {
+    const typeName = lower.replace('silvally-', '');
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: `${capitalizeStr(typeName)} Memory` };
+  }
+
+  // Generic fallback if varName has a non-default suffix and is not base species name
+  if (lower.includes('-') && lower !== sLower) {
+    const rawLabel = lower.replace(`${sLower}-`, '').split('-').map(capitalizeStr).join(' ');
+    return { isSpecialForm: true, isCosmeticOnly: false, formType: 'special', formLabel: `${rawLabel} Form` };
+  }
+
+  return null;
+}
+
+export async function fetchSpecialFormsForSpecies(
+  speciesId: number,
+  speciesName: string,
+  varieties?: any[],
+  fallbackFlavorText: string = ''
+): Promise<NonNullable<FullPokemonData['specialForms']>> {
+  let varsList = varieties;
+  if (!varsList) {
+    try {
+      const speciesRes = await fetchWithRetry(`${BASE_URL}/pokemon-species/${speciesId}`);
+      if (speciesRes.ok) {
+        const sData = await speciesRes.json();
+        varsList = sData.varieties || [];
+      }
+    } catch (e) {
+      return [];
+    }
+  }
+
+  if (!varsList || varsList.length === 0) return [];
+
+  const candidateVarieties = varsList.filter((v: any) => !v.is_default);
+
+  if (candidateVarieties.length === 0) return [];
+
+  const results: NonNullable<FullPokemonData['specialForms']> = [];
+
+  for (const v of candidateVarieties) {
+    const varName = v.pokemon?.name || '';
+    const classified = classifySpecialForm(varName, speciesName);
+
+    if (!classified || !classified.isSpecialForm) continue;
+
+    try {
+      const varRes = await fetchWithRetry(v.pokemon.url);
+      if (!varRes.ok) continue;
+      const pData = await varRes.json();
+
+      const sortedTypes = (pData.types || []).sort((a: any, b: any) => a.slot - b.slot);
+      const primary_type = sortedTypes[0]?.type?.name || 'normal';
+      const secondary_type = sortedTypes[1]?.type?.name || null;
+
+      const getStat = (statName: string) => {
+        const found = pData.stats?.find((s: any) => s.stat?.name === statName);
+        return found ? found.base_stat : 0;
+      };
+
+      const stats = {
+        hp: getStat('hp'),
+        attack: getStat('attack'),
+        defense: getStat('defense'),
+        sp_attack: getStat('special-attack'),
+        sp_defense: getStat('special-defense'),
+        speed: getStat('speed'),
+      };
+
+      const abilities = await Promise.all(
+        (pData.abilities || []).map(async (a: any) => {
+          const abilityName = a.ability.name;
+          const effectText = await fetchAbilityEffect(a.ability.url, abilityName);
+          return {
+            ability_name: abilityName,
+            effect_text: effectText,
+            is_hidden: Boolean(a.is_hidden),
+          };
+        })
+      );
+
+      const sprite_url =
+        pData.sprites?.front_default ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pData.id}.png`;
+      const shiny_sprite_url =
+        pData.sprites?.front_shiny ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pData.id}.png`;
+      const official_artwork_url =
+        pData.sprites?.other?.['official-artwork']?.front_default ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pData.id}.png`;
+      const shiny_artwork_url =
+        pData.sprites?.other?.['official-artwork']?.front_shiny ||
+        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pData.id}.png`;
+
+      results.push({
+        base_pokemon_id: speciesId,
+        form_type: classified.formType,
+        form_name: varName,
+        form_label: classified.formLabel,
+        primary_type,
+        secondary_type,
+        height: pData.height,
+        weight: pData.weight,
+        flavor_text: fallbackFlavorText,
+        sprite_url,
+        shiny_sprite_url,
+        official_artwork_url,
+        shiny_artwork_url,
+        stats,
+        abilities,
+      });
+    } catch (err) {
+      console.error(`Failed to fetch special form ${varName}:`, err);
+    }
+  }
+
+  return results;
 }

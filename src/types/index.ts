@@ -103,6 +103,27 @@ export interface PokemonVariant {
   abilities: PokemonAbility[];
 }
 
+export type SpecialFormType = 'mega' | 'mega_x' | 'mega_y' | 'gmax' | 'special';
+
+export interface PokemonSpecialForm {
+  id: number;
+  basePokemonId: number;
+  formType: SpecialFormType;
+  formName: string;
+  formLabel: string;
+  primaryType: PokemonType;
+  secondaryType?: PokemonType | null;
+  height?: number;
+  weight?: number;
+  flavorText?: string;
+  spriteUrl: string;
+  shinySpriteUrl: string;
+  officialArtworkUrl: string;
+  shinyArtworkUrl: string;
+  stats: PokemonStat;
+  abilities: PokemonAbility[];
+}
+
 export interface FullPokemonData {
   pokemon: {
     id: number;
@@ -147,6 +168,35 @@ export interface FullPokemonData {
     base_pokemon_id: number;
     variant_name: string;
     region_label: string;
+    primary_type: string;
+    secondary_type: string | null;
+    height: number;
+    weight: number;
+    flavor_text: string;
+    sprite_url: string;
+    shiny_sprite_url: string;
+    official_artwork_url: string;
+    shiny_artwork_url: string;
+    stats: {
+      hp: number;
+      attack: number;
+      defense: number;
+      sp_attack: number;
+      sp_defense: number;
+      speed: number;
+    };
+    abilities: Array<{
+      ability_name: string;
+      effect_text: string;
+      is_hidden: boolean;
+    }>;
+  }>;
+  specialForms?: Array<{
+    id?: number;
+    base_pokemon_id: number;
+    form_type: SpecialFormType;
+    form_name: string;
+    form_label: string;
     primary_type: string;
     secondary_type: string | null;
     height: number;

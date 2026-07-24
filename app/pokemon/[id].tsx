@@ -14,8 +14,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme, AnimatedThemeView } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getUserSetting } from '../../src/db/queries';
-import { Pokemon, PokemonVariant } from '../../src/types';
+import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getUserSetting } from '../../src/db/queries';
+import { insertSpecialForm, insertVariant } from '../../src/db/sync';
+import { fetchSpecialFormsForSpecies, fetchRegionalVariantsForSpecies } from '../../src/api/pokeapi';
+import { Pokemon, PokemonVariant, PokemonSpecialForm } from '../../src/types';
 import { TypeChip, StatBar, PokemonCryButton } from '../../src/components';
 import { useToggleSquadMutation } from '../../src/hooks/useTeamQuery';
 import { getDefensiveMatchups } from '../../src/data/typeChart';
@@ -42,6 +44,10 @@ export default function PokemonDetailScreen() {
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [familyVariantsMap, setFamilyVariantsMap] = useState<Record<number, PokemonVariant[]>>({});
 
+  const [specialForms, setSpecialForms] = useState<PokemonSpecialForm[]>([]);
+  const [selectedSpecialFormId, setSelectedSpecialFormId] = useState<number | null>(null);
+  const [isSpecialFormActive, setIsSpecialFormActive] = useState<boolean>(false);
+
   const [evolutionChain, setEvolutionChain] = useState<
     Array<{ id: number; name: string; number: string; spriteUrl: string; trigger?: string | null }>
   >([]);
@@ -56,7 +62,7 @@ export default function PokemonDetailScreen() {
   // Team Stub State
   const [inTeam, setInTeam] = useState<boolean>(false);
 
-  // Load Pokemon & Evolution Chain & Variants
+  // Load Pokemon & Evolution Chain & Variants & Special Forms
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
@@ -64,10 +70,11 @@ export default function PokemonDetailScreen() {
       setLoading(true);
       try {
         const numId = parseInt(id, 10);
-        const [pData, evoData, vData, defaultShinyVal] = await Promise.all([
+        let [pData, evoData, vData, sfData, defaultShinyVal] = await Promise.all([
           getPokemonById(db, numId),
           getEvolutionChainForPokemon(db, numId),
           getVariantsForPokemon(db, numId),
+          getSpecialFormsForPokemon(db, numId),
           getUserSetting(db, 'shiny_by_default', 'false'),
         ]);
 
@@ -78,6 +85,9 @@ export default function PokemonDetailScreen() {
           setEvolutionChain(evoData);
           setVariants(vData);
           setSelectedVariantId(null);
+          setSpecialForms(sfData);
+          setSelectedSpecialFormId(null);
+          setIsSpecialFormActive(false);
           setIsShiny(shouldDefaultShiny);
 
           // Fetch family variants map for dynamic evolution chain mapping
@@ -97,6 +107,40 @@ export default function PokemonDetailScreen() {
           }
 
           setLoading(false);
+
+          // Background on-demand fetch & cache for Special Forms if not cached yet
+          if (sfData.length === 0) {
+            fetchSpecialFormsForSpecies(numId, pData.name)
+              .then(async (fetchedSF) => {
+                if (fetchedSF && fetchedSF.length > 0) {
+                  for (const sf of fetchedSF) {
+                    await insertSpecialForm(db, sf);
+                  }
+                  const freshSF = await getSpecialFormsForPokemon(db, numId);
+                  if (isMounted && freshSF.length > 0) {
+                    setSpecialForms(freshSF);
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+
+          // Background on-demand fetch & cache for Regional Variants if not cached yet
+          if (vData.length === 0) {
+            fetchRegionalVariantsForSpecies(numId)
+              .then(async (fetchedV) => {
+                if (fetchedV && fetchedV.length > 0) {
+                  for (const v of fetchedV) {
+                    await insertVariant(db, v);
+                  }
+                  const freshV = await getVariantsForPokemon(db, numId);
+                  if (isMounted && freshV.length > 0) {
+                    setVariants(freshV);
+                  }
+                }
+              })
+              .catch(() => {});
+          }
         }
       } catch (err) {
         console.error('Failed to load pokemon detail:', err);
@@ -143,26 +187,50 @@ export default function PokemonDetailScreen() {
     [selectedVariantId, variants]
   );
 
-  const activePrimaryType = selectedVariant ? selectedVariant.primaryType : pokemon?.primaryType || 'normal';
-  const activeSecondaryType = selectedVariant ? selectedVariant.secondaryType : pokemon?.secondaryType;
+  const selectedSpecialForm = useMemo(
+    () => (isSpecialFormActive && selectedSpecialFormId !== null ? specialForms.find((sf) => sf.id === selectedSpecialFormId) || null : null),
+    [isSpecialFormActive, selectedSpecialFormId, specialForms]
+  );
 
-  const activeNormalArtwork = selectedVariant
+  const activePrimaryType = selectedSpecialForm
+    ? selectedSpecialForm.primaryType
+    : selectedVariant
+    ? selectedVariant.primaryType
+    : pokemon?.primaryType || 'normal';
+
+  const activeSecondaryType = selectedSpecialForm
+    ? selectedSpecialForm.secondaryType
+    : selectedVariant
+    ? selectedVariant.secondaryType
+    : pokemon?.secondaryType;
+
+  const activeNormalArtwork = selectedSpecialForm
+    ? selectedSpecialForm.officialArtworkUrl || selectedSpecialForm.spriteUrl
+    : selectedVariant
     ? selectedVariant.officialArtworkUrl || selectedVariant.spriteUrl
     : pokemon?.officialArtworkUrl || pokemon?.spriteUrl || '';
-  const activeShinyArtwork = selectedVariant
+
+  const activeShinyArtwork = selectedSpecialForm
+    ? selectedSpecialForm.shinyArtworkUrl || selectedSpecialForm.officialArtworkUrl || selectedSpecialForm.shinySpriteUrl || selectedSpecialForm.spriteUrl
+    : selectedVariant
     ? selectedVariant.shinyArtworkUrl || selectedVariant.officialArtworkUrl || selectedVariant.shinySpriteUrl || selectedVariant.spriteUrl
     : pokemon?.shinyArtworkUrl || pokemon?.officialArtworkUrl || pokemon?.shinySpriteUrl || pokemon?.spriteUrl || '';
 
-  const activeStats = selectedVariant ? selectedVariant.stats : pokemon?.stats;
-  const activeAbilities = selectedVariant ? selectedVariant.abilities : pokemon?.abilities;
-  const activeHeight = selectedVariant?.height ?? pokemon?.height ?? 0;
-  const activeWeight = selectedVariant?.weight ?? pokemon?.weight ?? 0;
-  const activeFlavorText = selectedVariant?.flavorText || pokemon?.flavorText || '';
+  const activeStats = selectedSpecialForm ? selectedSpecialForm.stats : selectedVariant ? selectedVariant.stats : pokemon?.stats;
+  const activeAbilities = selectedSpecialForm ? selectedSpecialForm.abilities : selectedVariant ? selectedVariant.abilities : pokemon?.abilities;
+  const activeHeight = selectedSpecialForm?.height ?? selectedVariant?.height ?? pokemon?.height ?? 0;
+  const activeWeight = selectedSpecialForm?.weight ?? selectedVariant?.weight ?? pokemon?.weight ?? 0;
+  const activeFlavorText = selectedSpecialForm?.flavorText || selectedVariant?.flavorText || pokemon?.flavorText || '';
 
   const handleSelectVariant = useCallback(
     (vId: number | null) => {
       hapticMedium();
       setSelectedVariantId(vId);
+      // Reverting special form if active when changing regional variant
+      if (isSpecialFormActive) {
+        setIsSpecialFormActive(false);
+        setSelectedSpecialFormId(null);
+      }
 
       const targetVar = vId !== null ? variants.find((v) => v.id === vId) : null;
       if (targetVar) {
@@ -175,8 +243,51 @@ export default function PokemonDetailScreen() {
         }
       }
     },
-    [variants, pokemon, isShiny, setThemeByTypes, setThemeForPokemon]
+    [variants, pokemon, isShiny, isSpecialFormActive, setThemeByTypes, setThemeForPokemon]
   );
+
+  const handleActivateSpecialForm = useCallback(
+    (formId: number) => {
+      hapticMedium();
+      setIsSpecialFormActive(true);
+      setSelectedSpecialFormId(formId);
+
+      const targetForm = specialForms.find((sf) => sf.id === formId);
+      if (targetForm) {
+        setThemeByTypes(targetForm.primaryType, targetForm.secondaryType || undefined);
+      }
+    },
+    [specialForms, setThemeByTypes]
+  );
+
+  const handleSelectSpecialForm = useCallback(
+    (formId: number) => {
+      hapticMedium();
+      setSelectedSpecialFormId(formId);
+
+      const targetForm = specialForms.find((sf) => sf.id === formId);
+      if (targetForm) {
+        setThemeByTypes(targetForm.primaryType, targetForm.secondaryType || undefined);
+      }
+    },
+    [specialForms, setThemeByTypes]
+  );
+
+  const handleRevertSpecialForm = useCallback(() => {
+    hapticMedium();
+    setIsSpecialFormActive(false);
+    setSelectedSpecialFormId(null);
+
+    if (selectedVariant) {
+      setThemeByTypes(selectedVariant.primaryType, selectedVariant.secondaryType || undefined);
+    } else if (pokemon) {
+      if (isShiny) {
+        setThemeByTypes('electric', 'dragon');
+      } else {
+        setThemeForPokemon(pokemon);
+      }
+    }
+  }, [selectedVariant, pokemon, isShiny, setThemeByTypes, setThemeForPokemon]);
 
   // Handle Shiny Toggle
   const toggleShiny = useCallback(() => {
@@ -188,13 +299,15 @@ export default function PokemonDetailScreen() {
     if (nextShiny) {
       setThemeByTypes('electric', 'dragon');
     } else {
-      if (selectedVariant) {
+      if (selectedSpecialForm) {
+        setThemeByTypes(selectedSpecialForm.primaryType, selectedSpecialForm.secondaryType || undefined);
+      } else if (selectedVariant) {
         setThemeByTypes(selectedVariant.primaryType, selectedVariant.secondaryType || undefined);
       } else {
         setThemeForPokemon(pokemon);
       }
     }
-  }, [isShiny, pokemon, selectedVariant, setThemeByTypes, setThemeForPokemon]);
+  }, [isShiny, pokemon, selectedSpecialForm, selectedVariant, setThemeByTypes, setThemeForPokemon]);
 
   // Filter Moves
   const filteredMoves = useMemo(() => {
@@ -210,11 +323,14 @@ export default function PokemonDetailScreen() {
 
   const formattedName = useMemo(() => {
     if (!pokemon) return '';
+    if (selectedSpecialForm) {
+      return selectedSpecialForm.formLabel;
+    }
     if (selectedVariant) {
       return `${selectedVariant.regionLabel} ${pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}`;
     }
     return pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
-  }, [pokemon, selectedVariant]);
+  }, [pokemon, selectedVariant, selectedSpecialForm]);
 
   // Stats Total calculation
   const totalStats = useMemo(() => {
@@ -335,7 +451,16 @@ export default function PokemonDetailScreen() {
             {/* Name & Type Chips Header */}
             <View style={styles.nameHeader}>
               <View style={styles.titleRow}>
-                <Text style={[styles.pokemonTitle, { color: colorScheme.onBackground }]}>
+                <Text
+                  style={[
+                    styles.pokemonTitle,
+                    {
+                      color: colorScheme.onBackground,
+                      fontSize: formattedName.length > 18 ? 20 : formattedName.length > 14 ? 24 : 28,
+                    },
+                  ]}
+                  numberOfLines={2}
+                >
                   {formattedName}
                 </Text>
                 <PokemonCryButton pokemonId={pokemon.id} pokemonName={pokemon.name} />
@@ -347,6 +472,66 @@ export default function PokemonDetailScreen() {
                 ) : null}
               </View>
             </View>
+
+            {/* Special Battle & Alternate Forms Segmented Pills */}
+            {specialForms.length > 0 ? (
+              <View style={styles.variantSelectorContainer}>
+                <Text style={[styles.variantSelectorLabel, { color: colorScheme.secondary }]}>
+                  SPECIAL FORM
+                </Text>
+                <View style={styles.variantPillRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={handleRevertSpecialForm}
+                    style={[
+                      styles.variantPill,
+                      !isSpecialFormActive
+                        ? { backgroundColor: colorScheme.primary }
+                        : { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline, borderWidth: 1 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.variantPillText,
+                        !isSpecialFormActive
+                          ? { color: colorScheme.onPrimary }
+                          : { color: colorScheme.onSurface },
+                      ]}
+                    >
+                      Base
+                    </Text>
+                  </TouchableOpacity>
+
+                  {specialForms.map((sf) => {
+                    const isSelected = isSpecialFormActive && selectedSpecialFormId === sf.id;
+                    return (
+                      <TouchableOpacity
+                        key={sf.id}
+                        activeOpacity={0.7}
+                        onPress={() => handleActivateSpecialForm(sf.id)}
+                        style={[
+                          styles.variantPill,
+                          isSelected
+                            ? { backgroundColor: colorScheme.primary }
+                            : { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline, borderWidth: 1 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.variantPillText,
+                            isSelected
+                              ? { color: colorScheme.onPrimary }
+                              : { color: colorScheme.onSurface },
+                          ]}
+                        >
+                          {sf.formLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             {/* Regional Variant Switcher Segmented Pills */}
             {variants.length > 0 ? (
@@ -848,18 +1033,23 @@ const styles = StyleSheet.create({
   },
   nameHeader: {
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
+    width: '100%',
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    maxWidth: '100%',
+    paddingHorizontal: 8,
   },
   pokemonTitle: {
-    fontSize: 32,
     fontWeight: '800',
     letterSpacing: -0.5,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   typesRow: {
     flexDirection: 'row',
@@ -1096,5 +1286,51 @@ const styles = StyleSheet.create({
   variantPillText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  specialFormContainer: {
+    marginVertical: 4,
+    width: '100%',
+  },
+  specialFormTriggerBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  specialFormTriggerText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  specialFormActiveCard: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    gap: 10,
+  },
+  specialFormHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  specialFormActiveLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  revertPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  revertPillText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
