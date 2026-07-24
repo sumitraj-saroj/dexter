@@ -8,24 +8,30 @@ import {
   ActivityIndicator,
   TextInput,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme, AnimatedThemeView } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getUserSetting } from '../../src/db/queries';
+import { getPokemonById, getEvolutionChainForPokemon, getVariantsForPokemon, getSpecialFormsForPokemon, getUserSetting, setUserSetting } from '../../src/db/queries';
 import { insertSpecialForm, insertVariant } from '../../src/db/sync';
 import { fetchSpecialFormsForSpecies, fetchRegionalVariantsForSpecies } from '../../src/api/pokeapi';
 import { Pokemon, PokemonVariant, PokemonSpecialForm } from '../../src/types';
-import { TypeChip, StatBar, PokemonCryButton } from '../../src/components';
+import { TypeChip, StatBar, PokemonCryButton, DetailOnboardingOverlay, StatusTooltipOverlay, StepKey, TargetLayout } from '../../src/components';
 import { useToggleSquadMutation } from '../../src/hooks/useTeamQuery';
+import { useTrainerProfile } from '../../src/hooks/useTrainerProfile';
+import { useCollectionStatus } from '../../src/hooks/useCollectionStatus';
 import { getDefensiveMatchups } from '../../src/data/typeChart';
 import { hapticMedium, hapticSuccess, hapticLight } from '../../src/utils/haptics';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSequence,
+  withRepeat,
   Easing,
   FadeIn,
 } from 'react-native-reanimated';
@@ -62,6 +68,139 @@ export default function PokemonDetailScreen() {
   // Team Stub State
   const [inTeam, setInTeam] = useState<boolean>(false);
 
+  const {
+    toggleFavorite: toggleFavoriteMut,
+    toggleShinyOwned: toggleShinyOwnedMut,
+    toggleAlpha: toggleAlphaMut,
+    toggleCompetitiveBuild: toggleCompetitiveBuildMut,
+  } = useCollectionStatus(db);
+
+  const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const [shinyOwned, setShinyOwned] = useState<boolean>(false);
+  const [isAlpha, setIsAlpha] = useState<boolean>(false);
+  const [hasCompetitiveBuild, setHasCompetitiveBuild] = useState<boolean>(false);
+
+  const { recordSeen, toggleCaught } = useTrainerProfile(db);
+  const [isCaught, setIsCaught] = useState<boolean>(false);
+  const catchScale = useSharedValue(1);
+
+  const rootRef = React.useRef<View>(null);
+
+  // Onboarding Tour & Long Press Tooltip state & refs
+  const [tourVisible, setTourVisible] = useState<boolean>(false);
+  const [tourStepIndex, setTourStepIndex] = useState<number>(0);
+  const [targetLayouts, setTargetLayouts] = useState<Partial<Record<StepKey, TargetLayout>>>({});
+  const [activeTooltip, setActiveTooltip] = useState<{ key: StepKey; layout: TargetLayout } | null>(null);
+
+  const favRef = React.useRef<View>(null);
+  const caughtRef = React.useRef<View>(null);
+  const shinyRef = React.useRef<View>(null);
+  const alphaRef = React.useRef<View>(null);
+  const buildRef = React.useRef<View>(null);
+  const specialFormRef = React.useRef<View>(null);
+
+  const measureTarget = useCallback((key: StepKey) => {
+    const refMap: Record<StepKey, React.RefObject<View | null>> = {
+      fav: favRef,
+      caught: caughtRef,
+      shiny: shinyRef,
+      alpha: alphaRef,
+      build: buildRef,
+      specialForm: specialFormRef,
+    };
+    const targetRef = refMap[key];
+    if (targetRef?.current && rootRef.current) {
+      targetRef.current.measureLayout(
+        rootRef.current,
+        (left, top, width, height) => {
+          if (width > 0 && height > 0) {
+            setTargetLayouts((prev) => ({
+              ...prev,
+              [key]: { x: left, y: top, width, height },
+            }));
+          }
+        },
+        () => {}
+      );
+    }
+  }, []);
+
+  const measureAllTargets = useCallback(() => {
+    if (!rootRef.current) return;
+    const refMap: Record<StepKey, React.RefObject<View | null>> = {
+      fav: favRef,
+      caught: caughtRef,
+      shiny: shinyRef,
+      alpha: alphaRef,
+      build: buildRef,
+      specialForm: specialFormRef,
+    };
+
+    const keys: StepKey[] = ['fav', 'caught', 'shiny', 'alpha', 'build', 'specialForm'];
+    keys.forEach((key) => {
+      const targetRef = refMap[key];
+      if (targetRef?.current && rootRef.current) {
+        targetRef.current.measureLayout(
+          rootRef.current,
+          (left, top, width, height) => {
+            if (width > 0 && height > 0) {
+              setTargetLayouts((prev) => ({
+                ...prev,
+                [key]: { x: left, y: top, width, height },
+              }));
+            }
+          },
+          () => {}
+        );
+      }
+    });
+  }, []);
+
+  const handleCompleteOrSkipTour = useCallback(async () => {
+    setTourVisible(false);
+    await setUserSetting(db, 'has_seen_detail_onboarding', 'true');
+  }, [db]);
+
+  const handleNextTourStep = useCallback(() => {
+    const maxSteps = specialForms.length > 0 ? 6 : 5;
+    if (tourStepIndex < maxSteps - 1) {
+      const nextIndex = tourStepIndex + 1;
+      setTourStepIndex(nextIndex);
+      const stepKeys: StepKey[] = specialForms.length > 0
+        ? ['fav', 'caught', 'shiny', 'alpha', 'build', 'specialForm']
+        : ['fav', 'caught', 'shiny', 'alpha', 'build'];
+      if (stepKeys[nextIndex]) {
+        setTimeout(() => measureTarget(stepKeys[nextIndex]), 50);
+      }
+    } else {
+      handleCompleteOrSkipTour();
+    }
+  }, [tourStepIndex, specialForms.length, handleCompleteOrSkipTour, measureTarget]);
+
+  const handleReplayTour = useCallback(() => {
+    hapticMedium();
+    measureAllTargets();
+    setTourStepIndex(0);
+    setTourVisible(true);
+    setTimeout(() => measureTarget('fav'), 50);
+  }, [measureAllTargets, measureTarget]);
+
+  const handleLongPressIcon = useCallback((key: StepKey, ref: React.RefObject<View | null>) => {
+    hapticMedium();
+    if (ref.current && rootRef.current) {
+      ref.current.measureLayout(
+        rootRef.current,
+        (left, top, width, height) => {
+          if (width > 0 && height > 0) {
+            setActiveTooltip({ key, layout: { x: left, y: top, width, height } });
+          }
+        },
+        () => {}
+      );
+    }
+  }, []);
+
+
   // Load Pokemon & Evolution Chain & Variants & Special Forms
   useEffect(() => {
     let isMounted = true;
@@ -70,18 +209,25 @@ export default function PokemonDetailScreen() {
       setLoading(true);
       try {
         const numId = parseInt(id, 10);
-        let [pData, evoData, vData, sfData, defaultShinyVal] = await Promise.all([
+        let [pData, evoData, vData, sfData, defaultShinyVal, hasSeenOnboardingVal] = await Promise.all([
           getPokemonById(db, numId),
           getEvolutionChainForPokemon(db, numId),
           getVariantsForPokemon(db, numId),
           getSpecialFormsForPokemon(db, numId),
           getUserSetting(db, 'shiny_by_default', 'false'),
+          getUserSetting(db, 'has_seen_detail_onboarding', 'false'),
         ]);
 
         if (isMounted && pData) {
           const shouldDefaultShiny = defaultShinyVal === 'true';
           setPokemon(pData);
           setInTeam(Boolean(pData.isInTeam));
+          setIsCaught(Boolean(pData.isCaught));
+          setIsFavorite(Boolean(pData.isFavorite));
+          setShinyOwned(Boolean(pData.shinyOwned));
+          setIsAlpha(Boolean(pData.isAlpha));
+          setHasCompetitiveBuild(Boolean(pData.hasCompetitiveBuild));
+          recordSeen(pData.id);
           setEvolutionChain(evoData);
           setVariants(vData);
           setSelectedVariantId(null);
@@ -89,6 +235,14 @@ export default function PokemonDetailScreen() {
           setSelectedSpecialFormId(null);
           setIsSpecialFormActive(false);
           setIsShiny(shouldDefaultShiny);
+
+          if (hasSeenOnboardingVal !== 'true') {
+            setTimeout(() => {
+              measureAllTargets();
+              setTourStepIndex(0);
+              setTourVisible(true);
+            }, 450);
+          }
 
           // Fetch family variants map for dynamic evolution chain mapping
           const fMap: Record<number, PokemonVariant[]> = { [numId]: vData };
@@ -153,10 +307,22 @@ export default function PokemonDetailScreen() {
     };
   }, [db, id]);
 
-  // Reanimated values for Artwork Mount & Shiny Cross-Fade
+  const [isAlphaActive, setIsAlphaActive] = useState<boolean>(false);
+  const isHasFormOrVariant = Boolean(selectedVariantId !== null || isSpecialFormActive);
+
+  // Turn off Alpha view mode if user switches to a variant or special form
+  useEffect(() => {
+    if (isHasFormOrVariant && isAlphaActive) {
+      setIsAlphaActive(false);
+    }
+  }, [isHasFormOrVariant, isAlphaActive]);
+
+  // Reanimated values for Artwork Mount & Shiny Cross-Fade & Alpha Glow
   const shinyOpacity = useSharedValue(0);
   const heroScale = useSharedValue(0.92);
   const heroMountOpacity = useSharedValue(0);
+  const alphaScale = useSharedValue(1);
+  const alphaGlowPulse = useSharedValue(0);
 
   useEffect(() => {
     shinyOpacity.value = withTiming(isShiny ? 1 : 0, {
@@ -166,20 +332,41 @@ export default function PokemonDetailScreen() {
   }, [isShiny]);
 
   useEffect(() => {
+    if (isAlphaActive && !isHasFormOrVariant) {
+      alphaScale.value = withTiming(1.18, { duration: 300, easing: Easing.out(Easing.quad) });
+      alphaGlowPulse.value = withRepeat(
+        withSequence(
+          withTiming(0.85, { duration: 900, easing: Easing.inOut(Easing.quad) }),
+          withTiming(0.35, { duration: 900, easing: Easing.inOut(Easing.quad) })
+        ),
+        -1,
+        true
+      );
+    } else {
+      alphaScale.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.quad) });
+      alphaGlowPulse.value = withTiming(0, { duration: 300 });
+    }
+  }, [isAlphaActive, isHasFormOrVariant]);
+
+  useEffect(() => {
     if (pokemon) {
       heroScale.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.quad) });
       heroMountOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.quad) });
     }
   }, [pokemon]);
 
+  const alphaGlowStyle = useAnimatedStyle(() => ({
+    opacity: alphaGlowPulse.value,
+  }));
+
   const normalArtworkStyle = useAnimatedStyle(() => ({
     opacity: (1 - shinyOpacity.value) * heroMountOpacity.value,
-    transform: [{ scale: heroScale.value }],
+    transform: [{ scale: heroScale.value * alphaScale.value }],
   }));
 
   const shinyArtworkStyle = useAnimatedStyle(() => ({
     opacity: shinyOpacity.value * heroMountOpacity.value,
-    transform: [{ scale: heroScale.value }],
+    transform: [{ scale: heroScale.value * alphaScale.value }],
   }));
 
   const selectedVariant = useMemo(
@@ -216,7 +403,20 @@ export default function PokemonDetailScreen() {
     ? selectedVariant.shinyArtworkUrl || selectedVariant.officialArtworkUrl || selectedVariant.shinySpriteUrl || selectedVariant.spriteUrl
     : pokemon?.shinyArtworkUrl || pokemon?.officialArtworkUrl || pokemon?.shinySpriteUrl || pokemon?.spriteUrl || '';
 
-  const activeStats = selectedSpecialForm ? selectedSpecialForm.stats : selectedVariant ? selectedVariant.stats : pokemon?.stats;
+  const baseStats = selectedSpecialForm ? selectedSpecialForm.stats : selectedVariant ? selectedVariant.stats : pokemon?.stats;
+  const activeStats = useMemo(() => {
+    if (!baseStats) return undefined;
+    if (!isAlphaActive) return baseStats;
+    return {
+      hp: Math.round(baseStats.hp * 1.5),
+      attack: Math.round(baseStats.attack * 1.5),
+      defense: Math.round(baseStats.defense * 1.5),
+      specialAttack: Math.round(baseStats.specialAttack * 1.5),
+      specialDefense: Math.round(baseStats.specialDefense * 1.5),
+      speed: Math.round(baseStats.speed * 1.5),
+    };
+  }, [baseStats, isAlphaActive]);
+
   const activeAbilities = selectedSpecialForm ? selectedSpecialForm.abilities : selectedVariant ? selectedVariant.abilities : pokemon?.abilities;
   const activeHeight = selectedSpecialForm?.height ?? selectedVariant?.height ?? pokemon?.height ?? 0;
   const activeWeight = selectedSpecialForm?.weight ?? selectedVariant?.weight ?? pokemon?.weight ?? 0;
@@ -309,6 +509,22 @@ export default function PokemonDetailScreen() {
     }
   }, [isShiny, pokemon, selectedSpecialForm, selectedVariant, setThemeByTypes, setThemeForPokemon]);
 
+  // Handle Catch Toggle
+  const handleToggleCatch = useCallback(async () => {
+    if (!pokemon) return;
+    hapticSuccess();
+    catchScale.value = withSequence(
+      withTiming(1.25, { duration: 120, easing: Easing.out(Easing.quad) }),
+      withTiming(1, { duration: 120, easing: Easing.out(Easing.quad) })
+    );
+    const res = await toggleCaught(pokemon.id);
+    setIsCaught(res.isCaught);
+  }, [pokemon, toggleCaught, catchScale]);
+
+  const catchAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: catchScale.value }],
+  }));
+
   // Filter Moves
   const filteredMoves = useMemo(() => {
     if (!pokemon?.moves) return [];
@@ -384,19 +600,20 @@ export default function PokemonDetailScreen() {
     : pokemon.officialArtworkUrl || pokemon.spriteUrl;
 
   return (
-    <AnimatedThemeView style={styles.container}>
+    <AnimatedThemeView ref={rootRef} style={styles.container}>
       <SafeAreaView style={{ flex: 1 }}>
         {/* Top Nav Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={[styles.backText, { color: colorScheme.primary }]}>← Back</Text>
+            <Ionicons name="chevron-back" size={20} color={colorScheme.primary} />
+            <Text style={[styles.backText, { color: colorScheme.primary }]}>Back</Text>
           </TouchableOpacity>
 
           <Text style={[styles.headerNumber, { color: colorScheme.onBackground }]}>
-            #{pokemon.number}
+            {pokemon.number.startsWith('#') ? pokemon.number : `#${pokemon.number}`}
           </Text>
 
-          {/* Shiny Toggle Button */}
+          {/* Shiny Preview Toggle */}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={toggleShiny}
@@ -419,12 +636,16 @@ export default function PokemonDetailScreen() {
           </TouchableOpacity>
         </View>
 
+
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
           {/* Main Pokemon Artwork Hero */}
           <View style={styles.heroContainer}>
+            {isAlphaActive ? (
+              <Animated.View style={[styles.alphaGlowCircle, alphaGlowStyle]} />
+            ) : null}
             <Animated.View style={[styles.heroArtworkWrapper, normalArtworkStyle]}>
               <AnimatedImage
                 sharedTransitionTag={`pokemon-image-${pokemon.id}`}
@@ -448,7 +669,7 @@ export default function PokemonDetailScreen() {
 
           {/* Staggered Body Content */}
           <Animated.View entering={FadeIn.delay(250).duration(200)} style={{ gap: 16 }}>
-            {/* Name & Type Chips Header */}
+            {/* Name & Type Chips Header & Status Row */}
             <View style={styles.nameHeader}>
               <View style={styles.titleRow}>
                 <Text
@@ -463,6 +684,12 @@ export default function PokemonDetailScreen() {
                 >
                   {formattedName}
                 </Text>
+                {isAlphaActive ? (
+                  <View style={styles.alphaTag}>
+                    <Ionicons name="flag" size={10} color="#FFFFFF" />
+                    <Text style={styles.alphaTagText}>ALPHA</Text>
+                  </View>
+                ) : null}
                 <PokemonCryButton pokemonId={pokemon.id} pokemonName={pokemon.name} />
               </View>
               <View style={styles.typesRow}>
@@ -471,11 +698,195 @@ export default function PokemonDetailScreen() {
                   <TypeChip type={activeSecondaryType} size="medium" />
                 ) : null}
               </View>
+
+              {/* Collection Status Section Header */}
+              <View style={styles.statusSectionHeader}>
+                <Text style={[styles.statusSectionLabel, { color: colorScheme.secondary }]}>
+                  COLLECTION STATUS
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleReplayTour}
+                  style={styles.statusHelpButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons
+                    name="help-circle-outline"
+                    size={16}
+                    color={colorScheme.onSurfaceVariant}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Status Row */}
+              <View
+                style={[
+                  styles.statusRowContainer,
+                  {
+                    backgroundColor: colorScheme.surfaceVariant + '40',
+                    borderColor: colorScheme.outline + '30',
+                  },
+                ]}
+              >
+
+
+                {/* Favorite Toggle */}
+                <TouchableOpacity
+                  ref={favRef}
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => handleLongPressIcon('fav', favRef)}
+                  onPress={async () => {
+                    if (!pokemon) return;
+                    hapticMedium();
+                    const res = await toggleFavoriteMut(pokemon.id);
+                    setIsFavorite(res);
+                  }}
+                  style={styles.statusRowButton}
+                >
+                  <Ionicons
+                    name={isFavorite ? 'heart' : 'heart-outline'}
+                    size={16}
+                    color={isFavorite ? '#F43F5E' : colorScheme.onSurfaceVariant}
+                  />
+                  <Text
+                    style={[
+                      styles.statusRowText,
+                      { color: isFavorite ? '#F43F5E' : colorScheme.onSurfaceVariant },
+                    ]}
+                  >
+                    Fav
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Caught Toggle */}
+                <TouchableOpacity
+                  ref={caughtRef}
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => handleLongPressIcon('caught', caughtRef)}
+                  onPress={handleToggleCatch}
+                  style={styles.statusRowButton}
+                >
+                  <Animated.View style={catchAnimStyle}>
+                    <Ionicons
+                      name={isCaught ? 'disc' : 'disc-outline'}
+                      size={16}
+                      color={isCaught ? '#EF4444' : colorScheme.onSurfaceVariant}
+                    />
+                  </Animated.View>
+                  <Text
+                    style={[
+                      styles.statusRowText,
+                      { color: isCaught ? '#EF4444' : colorScheme.onSurfaceVariant },
+                    ]}
+                  >
+                    Caught
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Shiny Owned Toggle */}
+                <TouchableOpacity
+                  ref={shinyRef}
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => handleLongPressIcon('shiny', shinyRef)}
+                  onPress={async () => {
+                    if (!pokemon) return;
+                    hapticMedium();
+                    const res = await toggleShinyOwnedMut(pokemon.id);
+                    setShinyOwned(res);
+                  }}
+                  style={styles.statusRowButton}
+                >
+                  <Ionicons
+                    name={shinyOwned ? 'star' : 'star-outline'}
+                    size={16}
+                    color={shinyOwned ? '#F59E0B' : colorScheme.onSurfaceVariant}
+                  />
+                  <Text
+                    style={[
+                      styles.statusRowText,
+                      { color: shinyOwned ? '#F59E0B' : colorScheme.onSurfaceVariant },
+                    ]}
+                  >
+                    Shiny
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Alpha Toggle (Hidden when variant or special form is active) */}
+                {!isHasFormOrVariant ? (
+                  <TouchableOpacity
+                    ref={alphaRef}
+                    activeOpacity={0.7}
+                    delayLongPress={300}
+                    onLongPress={() => handleLongPressIcon('alpha', alphaRef)}
+                    onPress={async () => {
+                      if (!pokemon) return;
+                      hapticMedium();
+                      const nextAlphaState = !isAlphaActive;
+                      setIsAlphaActive(nextAlphaState);
+                      const res = await toggleAlphaMut(pokemon.id);
+                      setIsAlpha(res);
+                    }}
+                    style={[
+                      styles.statusRowButton,
+                      isAlphaActive && {
+                        backgroundColor: '#FEE2E2',
+                        borderRadius: 6,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={isAlphaActive || isAlpha ? 'flag' : 'flag-outline'}
+                      size={16}
+                      color={isAlphaActive || isAlpha ? '#DC2626' : colorScheme.onSurfaceVariant}
+                    />
+                    <Text
+                      style={[
+                        styles.statusRowText,
+                        { color: isAlphaActive || isAlpha ? '#DC2626' : colorScheme.onSurfaceVariant },
+                      ]}
+                    >
+                      {isAlphaActive ? 'Alpha ON' : 'Alpha'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {/* Competitive Build Button */}
+                <TouchableOpacity
+                  ref={buildRef}
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => handleLongPressIcon('build', buildRef)}
+                  onPress={() => {
+                    if (!pokemon) return;
+                    hapticMedium();
+                    router.push(`/pokemon/${pokemon.id}/builds`);
+                  }}
+                  style={styles.statusRowButton}
+                >
+                  <Ionicons
+                    name={hasCompetitiveBuild ? 'ribbon' : 'ribbon-outline'}
+                    size={16}
+                    color={hasCompetitiveBuild ? '#06B6D4' : colorScheme.onSurfaceVariant}
+                  />
+                  <Text
+                    style={[
+                      styles.statusRowText,
+                      { color: hasCompetitiveBuild ? '#06B6D4' : colorScheme.onSurfaceVariant },
+                    ]}
+                  >
+                    Build
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Special Battle & Alternate Forms Segmented Pills */}
             {specialForms.length > 0 ? (
-              <View style={styles.variantSelectorContainer}>
+              <View ref={specialFormRef} style={styles.variantSelectorContainer}>
+
                 <Text style={[styles.variantSelectorLabel, { color: colorScheme.secondary }]}>
                   SPECIAL FORM
                 </Text>
@@ -710,25 +1121,32 @@ export default function PokemonDetailScreen() {
                 styles.card,
                 {
                   backgroundColor: colorScheme.surface,
-                  borderColor: colorScheme.outline,
+                  borderColor: isAlphaActive ? '#FCA5A5' : colorScheme.outline,
                 },
               ]}
             >
               <View style={styles.cardHeaderRow}>
-                <Text style={[styles.cardTitle, { color: colorScheme.onSurface }]}>
-                  Base Stats
-                </Text>
-                <Text style={[styles.totalStatsBadge, { color: colorScheme.primary }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.cardTitle, { color: colorScheme.onSurface }]}>
+                    Base Stats
+                  </Text>
+                  {isAlphaActive ? (
+                    <View style={styles.alphaStatBadgeContainer}>
+                      <Text style={styles.alphaStatBadgeText}>ALPHA (+50%)</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={[styles.totalStatsBadge, { color: isAlphaActive ? '#DC2626' : colorScheme.primary }]}>
                   Total: {totalStats}
                 </Text>
               </View>
 
-              <StatBar label="HP" value={activeStats.hp} index={0} />
-              <StatBar label="Attack" value={activeStats.attack} index={1} />
-              <StatBar label="Defense" value={activeStats.defense} index={2} />
-              <StatBar label="Sp. Atk" value={activeStats.specialAttack} index={3} />
-              <StatBar label="Sp. Def" value={activeStats.specialDefense} index={4} />
-              <StatBar label="Speed" value={activeStats.speed} index={5} />
+              <StatBar label="HP" value={activeStats.hp} index={0} barColor={isAlphaActive ? '#DC2626' : undefined} />
+              <StatBar label="Attack" value={activeStats.attack} index={1} barColor={isAlphaActive ? '#DC2626' : undefined} />
+              <StatBar label="Defense" value={activeStats.defense} index={2} barColor={isAlphaActive ? '#DC2626' : undefined} />
+              <StatBar label="Sp. Atk" value={activeStats.specialAttack} index={3} barColor={isAlphaActive ? '#DC2626' : undefined} />
+              <StatBar label="Sp. Def" value={activeStats.specialDefense} index={4} barColor={isAlphaActive ? '#DC2626' : undefined} />
+              <StatBar label="Speed" value={activeStats.speed} index={5} barColor={isAlphaActive ? '#DC2626' : undefined} />
             </View>
           ) : null}
 
@@ -962,10 +1380,31 @@ export default function PokemonDetailScreen() {
           ) : null}
           </Animated.View>
         </ScrollView>
+
+        <DetailOnboardingOverlay
+          visible={tourVisible}
+          stepIndex={tourStepIndex}
+          hasSpecialForms={specialForms.length > 0}
+          targetLayouts={targetLayouts}
+          onNext={handleNextTourStep}
+          onSkip={handleCompleteOrSkipTour}
+          colorScheme={colorScheme}
+          isDark={colorScheme.background === '#121212' || colorScheme.background.startsWith('#1')}
+        />
+
+        <StatusTooltipOverlay
+          visible={Boolean(activeTooltip)}
+          tooltipKey={activeTooltip?.key || null}
+          targetLayout={activeTooltip?.layout || null}
+          onDismiss={() => setActiveTooltip(null)}
+          colorScheme={colorScheme}
+          isDark={colorScheme.background === '#121212' || colorScheme.background.startsWith('#1')}
+        />
       </SafeAreaView>
     </AnimatedThemeView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -984,8 +1423,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 8,
     paddingRight: 12,
+    gap: 2,
   },
   backText: {
     fontSize: 16,
@@ -997,6 +1439,19 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
     fontVariant: ['tabular-nums'],
   },
+  catchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 100,
+    borderWidth: 1,
+    gap: 4,
+  },
+  catchText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   shinyButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -1005,6 +1460,100 @@ const styles = StyleSheet.create({
   },
   shinyText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  shinyOwnedBadgeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 100,
+    borderWidth: 1,
+    gap: 4,
+  },
+  shinyOwnedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  alphaGlowCircle: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(220, 38, 38, 0.35)',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  alphaTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'center',
+  },
+  alphaTagText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  alphaStatBadgeContainer: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  alphaStatBadgeText: {
+    color: '#DC2626',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  statusSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  statusSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    letterSpacing: 0.5,
+  },
+  statusHelpButton: {
+    padding: 2,
+  },
+  statusRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  statusRowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  statusRowText: {
+    fontSize: 11,
     fontWeight: '600',
   },
   scrollContent: {

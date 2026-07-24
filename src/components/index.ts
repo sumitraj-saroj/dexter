@@ -6,4 +6,4 @@ export * from './FilterBottomSheet';
 export * from './StatBar';
 export * from './PokemonCryButton';
 export * from './PokemonOfTheDayCard';
-
+export * from './DetailOnboardingOverlay';
