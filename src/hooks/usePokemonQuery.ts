@@ -13,6 +13,13 @@ export function usePokemonQuery(db: SQLiteDatabase, filters: FilterOptions) {
         generations: (filters.generations || []).slice().sort(),
         legendaryOnly: Boolean(filters.legendaryOnly),
         ability: filters.ability || '',
+        collectionFilters: (filters.collectionFilters || []).slice().sort(),
+        caughtOnly: Boolean(filters.caughtOnly),
+        notCaughtOnly: Boolean(filters.notCaughtOnly),
+        favoritesOnly: Boolean(filters.favoritesOnly),
+        shinyOwnedOnly: Boolean(filters.shinyOwnedOnly),
+        alphaOnly: Boolean(filters.alphaOnly),
+        hasCompetitiveBuildOnly: Boolean(filters.hasCompetitiveBuildOnly),
       },
     ],
     queryFn: async () => {

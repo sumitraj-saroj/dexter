@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getPokemonOfTheDay } from '../db/queries';
+import { getPokemonOfTheDay, recordPokemonSeen } from '../db/queries';
 import { Pokemon } from '../types';
 
 export function usePokemonOfTheDay(db: any, overrideDate?: string) {
@@ -7,8 +7,13 @@ export function usePokemonOfTheDay(db: any, overrideDate?: string) {
     queryKey: ['pokemonOfTheDay', overrideDate || 'today'],
     queryFn: async () => {
       if (!db) return null;
-      return await getPokemonOfTheDay(db, overrideDate);
+      const pokemon = await getPokemonOfTheDay(db, overrideDate);
+      if (pokemon) {
+        recordPokemonSeen(db, pokemon.id).catch(() => {});
+      }
+      return pokemon;
     },
     enabled: Boolean(db),
   });
 }
+

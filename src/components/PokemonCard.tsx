@@ -8,6 +8,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { Pokemon } from '../types';
 import { useAppTheme } from '../theme';
 import { TypeChip } from './TypeChip';
@@ -57,6 +58,25 @@ function PokemonCardComponent({ pokemon, index = 0, onPress }: PokemonCardProps)
     transform: [{ scale: scale.value * pressScale.value }],
   }));
 
+  // Priority status indicators (capped at 3 max)
+  const statusBadges = [];
+  if (pokemon.isCaught) {
+    statusBadges.push({ key: 'caught', icon: 'disc', color: '#EF4444' });
+  }
+  if (pokemon.isFavorite) {
+    statusBadges.push({ key: 'favorite', icon: 'heart', color: '#F43F5E' });
+  }
+  if (pokemon.shinyOwned) {
+    statusBadges.push({ key: 'shiny', icon: 'star', color: '#F59E0B' });
+  }
+  if (pokemon.isAlpha) {
+    statusBadges.push({ key: 'alpha', icon: 'flag', color: '#8B5CF6' });
+  }
+  if (pokemon.hasCompetitiveBuild) {
+    statusBadges.push({ key: 'comp', icon: 'ribbon', color: '#06B6D4' });
+  }
+  const visibleBadges = statusBadges.slice(0, 3);
+
   return (
     <Animated.View style={[{ flex: 1, margin: 6 }, animatedStyle]}>
       <Pressable
@@ -74,16 +94,21 @@ function PokemonCardComponent({ pokemon, index = 0, onPress }: PokemonCardProps)
           },
         ]}
       >
-        {/* Top Header: ID Badge & Legendary Indicator */}
+        {/* Top Header: ID Badge & Status Indicators */}
         <View style={styles.cardHeader}>
           <Text style={[styles.numberText, { color: colorScheme.secondary }]}>
             #{pokemon.number}
           </Text>
-          {pokemon.isLegendary || pokemon.isMythical ? (
-            <View style={[styles.starBadge, { backgroundColor: colorScheme.primary }]}>
-              <Text style={[styles.starText, { color: colorScheme.onPrimary }]}>★</Text>
-            </View>
-          ) : null}
+          <View style={styles.headerRightBadges}>
+            {visibleBadges.map((b) => (
+              <Ionicons key={b.key} name={b.icon as any} size={12} color={b.color} />
+            ))}
+            {pokemon.isLegendary || pokemon.isMythical ? (
+              <View style={[styles.starBadge, { backgroundColor: colorScheme.primary }]}>
+                <Text style={[styles.starText, { color: colorScheme.onPrimary }]}>★</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {/* Sprite Image */}
@@ -135,6 +160,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  headerRightBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  caughtBadge: {
+    marginRight: 2,
   },
   numberText: {
     fontSize: 12,

@@ -10,10 +10,11 @@ import {
   TextInput,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { FilterOptions, PokemonType } from '../types';
+import { FilterOptions, PokemonType, CollectionFilterStatus } from '../types';
 import { useAppTheme } from '../theme';
 import { TypeChip } from './TypeChip';
 import { hapticSelection } from '../utils/haptics';
+import { Ionicons } from '@expo/vector-icons';
 
 interface FilterBottomSheetProps {
   visible: boolean;
@@ -22,6 +23,15 @@ interface FilterBottomSheetProps {
   onApplyFilters: (newFilters: FilterOptions) => void;
   onResetFilters: () => void;
 }
+
+const COLLECTION_OPTIONS: Array<{ key: CollectionFilterStatus; label: string; icon: string }> = [
+  { key: 'caught', label: 'Caught only', icon: 'disc' },
+  { key: 'uncaught', label: 'Not yet caught', icon: 'ellipse-outline' },
+  { key: 'favorite', label: 'Favorites only', icon: 'heart' },
+  { key: 'shiny_owned', label: 'Shiny owned only', icon: 'star' },
+  { key: 'alpha', label: 'Alpha only', icon: 'flag' },
+  { key: 'competitive_build', label: 'Has competitive build', icon: 'ribbon' },
+];
 
 const ALL_TYPES: PokemonType[] = [
   'normal',
@@ -69,6 +79,9 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
   const [selectedGenerations, setSelectedGenerations] = useState<number[]>(filters.generations || []);
   const [legendaryOnly, setLegendaryOnly] = useState<boolean>(filters.legendaryOnly || false);
   const [ability, setAbility] = useState<string>(filters.ability || '');
+  const [selectedCollectionFilters, setSelectedCollectionFilters] = useState<CollectionFilterStatus[]>(
+    filters.collectionFilters || []
+  );
 
   // Sync state when sheet becomes visible
   useEffect(() => {
@@ -77,6 +90,7 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
       setSelectedGenerations(filters.generations || []);
       setLegendaryOnly(filters.legendaryOnly || false);
       setAbility(filters.ability || '');
+      setSelectedCollectionFilters(filters.collectionFilters || []);
     }
   }, [visible, filters]);
 
@@ -98,6 +112,19 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
     }
   };
 
+  const toggleCollectionFilter = (key: CollectionFilterStatus) => {
+    hapticSelection();
+    if (selectedCollectionFilters.includes(key)) {
+      setSelectedCollectionFilters(selectedCollectionFilters.filter((k) => k !== key));
+    } else {
+      let next = [...selectedCollectionFilters];
+      if (key === 'caught') next = next.filter((k) => k !== 'uncaught');
+      if (key === 'uncaught') next = next.filter((k) => k !== 'caught');
+      next.push(key);
+      setSelectedCollectionFilters(next);
+    }
+  };
+
   const handleApply = () => {
     onApplyFilters({
       ...filters,
@@ -105,6 +132,13 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
       generations: selectedGenerations,
       legendaryOnly,
       ability: ability.trim(),
+      collectionFilters: selectedCollectionFilters,
+      caughtOnly: selectedCollectionFilters.includes('caught'),
+      notCaughtOnly: selectedCollectionFilters.includes('uncaught'),
+      favoritesOnly: selectedCollectionFilters.includes('favorite'),
+      shinyOwnedOnly: selectedCollectionFilters.includes('shiny_owned'),
+      alphaOnly: selectedCollectionFilters.includes('alpha'),
+      hasCompetitiveBuildOnly: selectedCollectionFilters.includes('competitive_build'),
     });
     onClose();
   };
@@ -114,6 +148,7 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
     setSelectedGenerations([]);
     setLegendaryOnly(false);
     setAbility('');
+    setSelectedCollectionFilters([]);
     onResetFilters();
     onClose();
   };
@@ -153,6 +188,58 @@ export const FilterBottomSheet: React.FC<FilterBottomSheetProps> = ({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
               >
+                {/* Collection Status Filter */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colorScheme.onSurface }]}>
+                    Collection Status
+                  </Text>
+                  <View style={styles.collectionGrid}>
+                    {COLLECTION_OPTIONS.map((opt) => {
+                      const isSelected = selectedCollectionFilters.includes(opt.key);
+                      return (
+                        <TouchableOpacity
+                          key={opt.key}
+                          activeOpacity={0.7}
+                          onPress={() => toggleCollectionFilter(opt.key)}
+                          style={[
+                            styles.collectionChip,
+                            {
+                              backgroundColor: isSelected
+                                ? colorScheme.primaryContainer
+                                : colorScheme.surfaceVariant,
+                              borderColor: isSelected
+                                ? colorScheme.primary
+                                : colorScheme.outline + '40',
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={opt.icon as any}
+                            size={14}
+                            color={
+                              isSelected
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurfaceVariant
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.collectionChipText,
+                              {
+                                color: isSelected
+                                  ? colorScheme.onPrimaryContainer
+                                  : colorScheme.onSurfaceVariant,
+                              },
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
                 {/* Legendary / Mythical Toggle */}
                 <View style={styles.section}>
                   <View style={styles.toggleRow}>
@@ -353,6 +440,25 @@ const styles = StyleSheet.create({
   toggleLabelGroup: {
     flex: 1,
     paddingRight: 12,
+  },
+  collectionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  collectionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  collectionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   genGrid: {
     flexDirection: 'row',

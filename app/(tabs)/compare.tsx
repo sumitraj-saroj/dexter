@@ -16,7 +16,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useAppTheme, getTonalPaletteForPokemon } from '../../src/theme';
 import { useAppDb } from '../_layout';
-import { getPokemonById, getAllPokemon } from '../../src/db/queries';
+import { getPokemonById, getAllPokemon, recordPokemonSeen } from '../../src/db/queries';
 import { Pokemon, PokemonStat } from '../../src/types';
 import { TypeChip } from '../../src/components';
 import { getPokemonHeadToHeadMatchup } from '../../src/utils/typeEffectiveness';
@@ -208,6 +208,8 @@ export default function CompareScreen() {
           getPokemonById(db, idA),
           getPokemonById(db, idB),
         ]);
+        if (pA) recordPokemonSeen(db, pA.id).catch(() => {});
+        if (pB) recordPokemonSeen(db, pB.id).catch(() => {});
         if (isMounted) {
           setPokemonA(pA);
           setPokemonB(pB);

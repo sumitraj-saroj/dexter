@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { StyleSheet, Text, View, StatusBar, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { StyleSheet, Text, View, StatusBar, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAppTheme } from '../../src/theme';
 import { isDatabaseSynced, syncKantoPokemon } from '../../src/db';
@@ -12,9 +13,11 @@ import { useAppDb } from '../_layout';
 import { useDebounce } from '../../src/hooks/useDebounce';
 import { usePokemonQuery } from '../../src/hooks/usePokemonQuery';
 import { usePokemonOfTheDay } from '../../src/hooks/usePokemonOfTheDay';
+import { useTrainerProfile } from '../../src/hooks/useTrainerProfile';
+import { getAvatarById } from '../../src/utils/avatars';
 
 import { FilterOptions, Pokemon } from '../../src/types';
-import { hapticLight } from '../../src/utils/haptics';
+import { hapticLight, hapticSuccess } from '../../src/utils/haptics';
 
 export default function HomeScreen() {
   const db = useAppDb();
@@ -201,6 +204,30 @@ export default function HomeScreen() {
     [handleCardPress]
   );
 
+  const { profile, updateProfile } = useTrainerProfile(db);
+  const [firstLaunchModalVisible, setFirstLaunchModalVisible] = useState(false);
+  const [initialNameInput, setInitialNameInput] = useState('');
+
+  const currentAvatar = getAvatarById(profile?.avatarId || 'pikachu');
+
+  useEffect(() => {
+    if (profile && profile.name === 'Trainer' && profile.createdDate && profile.createdDate === profile.lastOpenDate) {
+      setFirstLaunchModalVisible(true);
+    }
+  }, [profile]);
+
+  const handleSaveInitialName = async () => {
+    hapticSuccess();
+    const cleanName = initialNameInput.trim() || 'Trainer';
+    await updateProfile({ name: cleanName });
+    setFirstLaunchModalVisible(false);
+  };
+
+  const handleSkipInitialName = () => {
+    hapticLight();
+    setFirstLaunchModalVisible(false);
+  };
+
   if (isCheckingSync) {
     return <View style={[styles.container, { backgroundColor: colorScheme.background }]} />;
   }
@@ -220,21 +247,40 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colorScheme.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* Simplified Home Header */}
+      {/* Simplified Home Header with Trainer Avatar Chip */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <Text style={[styles.title, { color: colorScheme.onBackground }]}>Dexter</Text>
-          <TouchableOpacity
-            activeOpacity={0.6}
-            onPress={() => {
-              hapticLight();
-              router.push('/settings');
-            }}
-            style={styles.settingsButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="settings-outline" size={22} color={colorScheme.onBackground} />
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => {
+                hapticLight();
+                router.push('/profile');
+              }}
+              style={[
+                styles.profileChip,
+                { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline },
+              ]}
+            >
+              <Image source={{ uri: currentAvatar.artworkUrl }} style={styles.profileChipAvatar} contentFit="contain" />
+              <Text style={[styles.profileChipText, { color: colorScheme.onSurface }]}>
+                Lv.{profile?.level || 1}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.6}
+              onPress={() => {
+                hapticLight();
+                router.push('/settings');
+              }}
+              style={styles.settingsButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="settings-outline" size={22} color={colorScheme.onBackground} />
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={[styles.subtitle, { color: colorScheme.secondary }]}>
           NATIONAL POKÉDEX • ALL GENERATIONS
@@ -302,6 +348,55 @@ export default function HomeScreen() {
         onApplyFilters={setFilters}
         onResetFilters={handleResetFilters}
       />
+
+      {/* First Launch Trainer Name Modal */}
+      <Modal visible={firstLaunchModalVisible} transparent animationType="fade">
+        <View style={styles.firstLaunchOverlay}>
+          <View
+            style={[
+              styles.firstLaunchContent,
+              { backgroundColor: colorScheme.surface, borderColor: colorScheme.outline },
+            ]}
+          >
+            <Text style={[styles.firstLaunchTitle, { color: colorScheme.onSurface }]}>
+              Welcome, Trainer!
+            </Text>
+            <Text style={[styles.firstLaunchSub, { color: colorScheme.secondary }]}>
+              Choose a name for your Trainer Profile to get started.
+            </Text>
+            <TextInput
+              style={[
+                styles.firstLaunchInput,
+                {
+                  color: colorScheme.onSurface,
+                  borderColor: colorScheme.outline,
+                  backgroundColor: colorScheme.surfaceVariant,
+                },
+              ]}
+              value={initialNameInput}
+              onChangeText={setInitialNameInput}
+              placeholder="Trainer Name (default: Trainer)"
+              placeholderTextColor={colorScheme.secondary}
+              autoFocus
+              maxLength={20}
+            />
+            <View style={styles.firstLaunchActions}>
+              <TouchableOpacity
+                onPress={handleSkipInitialName}
+                style={[styles.firstLaunchBtn, { borderColor: colorScheme.outline, borderWidth: 1 }]}
+              >
+                <Text style={[styles.firstLaunchBtnText, { color: colorScheme.onSurface }]}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveInitialName}
+                style={[styles.firstLaunchBtn, { backgroundColor: colorScheme.primary }]}
+              >
+                <Text style={[styles.firstLaunchBtnText, { color: colorScheme.onPrimary }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -325,6 +420,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  profileChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 4,
+  },
+  profileChipAvatar: {
+    width: 20,
+    height: 20,
+  },
+  profileChipText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   title: {
     fontSize: 28,
@@ -382,4 +499,51 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
   },
+  firstLaunchOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  firstLaunchContent: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  firstLaunchTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  firstLaunchSub: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  firstLaunchInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  firstLaunchActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  firstLaunchBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  firstLaunchBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });
+
